@@ -1,0 +1,28 @@
+# Local build and release outputs (publish downloadable packages in Releases).
+/dist/
+/release/
+/release-v*/
+/.publish/
+
+# Device credentials, clipboard staging, and received files never belong in Git.
+**/Data/
+**/Received/
+/tests/runtime*/
+
+# Generated local verification results and screenshots.
+/tests/*-result.json
+/tests/last-result.json
+/tests/*-preview.*
+/tests/v*-*.png
+
+# Local tools, editor caches, and secrets.
+.vs/
+bin/
+obj/
+.env
+.env.*
+*.pfx
+*.key
+*.pem
+*.log
+*.part
