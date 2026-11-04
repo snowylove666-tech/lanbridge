@@ -1,0 +1,397 @@
+// 轻桥 2.0 · 电脑界面
+const hash = new URLSearchParams(location.hash.slice(1));
+const TOKEN = hash.get('t') || sessionStorage.getItem('lbt') || '';
+if (hash.get('t')) { sessionStorage.setItem('lbt', TOKEN); history.replaceState(null, '', '/desk'); }
+const $ = id => document.getElementById(id);
+const hasWebView = !!(window.chrome && chrome.webview && chrome.webview.postMessageWithAdditionalObjects);
+
+let S = null, rev = 0;
+let openMenu = null, settingsOpen = false, addOpen = false, addTab = 'phone', editingName = false, qrIp = null;
+
+async function api(path, body) {
+  const r = await fetch('/api/local/' + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'X-LB-Local': TOKEN, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('出错了（' + r.status + '）'));
+  return j;
+}
+async function act(path, body, ok) {
+  try { const r = await api(path, body); if (ok) toast(ok); return r; }
+  catch (e) { toast(e.message, true); return null; }
+}
+
+async function loop() {
+  for (;;) {
+    try {
+      const r = await fetch('/api/local/state?rev=' + rev, { headers: { 'X-LB-Local': TOKEN } });
+      if (r.status === 401) { document.body.innerHTML = '<div style="padding:60px;text-align:center;color:#888">请从轻桥窗口打开</div>'; return; }
+      const s = await r.json(); S = s; rev = s.rev; render();
+    } catch { await sleep(1500); }
+  }
+}
+
+function set(el, html) { if (el._h !== html) { el._h = html; el.innerHTML = html; } }
+function devIcon(d) { return d.kind === 'phone' || d.form === 'phone' ? 'phone' : d.form === 'laptop' ? 'laptop' : 'desktop'; }
+const isMe = n => S && n === S.me.name;
+const tok = () => 't=' + encodeURIComponent(TOKEN);
+
+// ───────────── 渲染 ─────────────
+
+function render() {
+  if (!S) return;
+  renderTop(); renderRequests(); renderPending();
+  const none = S.devices.length === 0 && S.phones.length === 0;
+  $('welcome').classList.toggle('hide', !none);
+  $('devicesWrap').classList.toggle('hide', none);
+  if (none) set($('welcome'), welcomeHtml()); else renderDevices();
+  renderNearby(none);
+  renderFeed();
+  if (settingsOpen) renderSettings();
+  if (addOpen) renderAdd();
+  if (S.pair.until - Date.now() < 60000 && !render.refreshing) { render.refreshing = true; act('pair-refresh').finally(() => render.refreshing = false); }
+}
+
+function renderTop() {
+  if (!editingName) set($('me'), `<span class="me-label">本机</span><b>${esc(S.me.name)}</b>${icon('edit', 'muted')}`);
+  const p = S.settings.paused;
+  const online = S.devices.filter(d => d.state !== 'offline').length;
+  $('sync').className = 'sync' + (p ? ' paused' : '');
+  set($('sync'), p ? `${icon('pause')}同步已暂停` : `<i class="dot ${online ? 'on' : ''}"></i>${online ? '自动同步中' : '等其他设备上线'}`);
+  $('sync').title = p ? '点一下恢复' : '点一下暂停全部同步';
+  set($('openSettings'), icon('gear'));
+}
+
+function renderRequests() {
+  set($('requests'), S.requests.map(r => `
+    <div class="request">
+      <div class="ric">${icon(r.kind === 'phone' ? 'phone' : devIcon(r))}</div>
+      <div class="grow">
+        <div class="rt">“${esc(r.name)}”想连接这台电脑</div>
+        <div class="rs">${r.kind === 'phone' ? '手机上显示的核对码' : '那台电脑上显示的核对码'}：<span class="code">${esc(r.code)}</span> · 一样就点允许。允许后它会自动连上，以后不用再点。</div>
+      </div>
+      <button class="btn ghost" data-answer="${r.id}" data-allow="0">拒绝</button>
+      <button class="btn primary" data-answer="${r.id}" data-allow="1">${icon('check')}允许</button>
+    </div>`).join(''));
+}
+
+function renderPending() {
+  const p = S.pending;
+  if (!p) { set($('pending'), ''); return; }
+  const targets = [...S.devices, ...S.phones];
+  set($('pending'), `
+    <div class="modal"><div class="box">
+      <div class="mh">${icon('send')}<h2>把 ${p.count === 1 ? '“' + esc(p.names[0]) + '”' : p.count + ' 个文件'} 发到哪里？</h2><div class="grow"></div><button class="iconbtn" data-cancel-pending>${icon('x')}</button></div>
+      ${targets.length ? `<div class="targets">${targets.map(d => `<button class="target" data-send-pending="${d.id}">${icon(devIcon(d))}${esc(d.name)}<small>${d.state === 'offline' ? (d.kind === 'phone' ? '放进它的收件箱' : '上线后送达') : '在线'}</small></button>`).join('')}</div>` : '<p class="muted" style="margin:6px">还没有连接其他设备。先在主界面添加设备。</p>'}
+    </div></div>`);
+}
+
+function devSub(d) {
+  if (d.kind === 'phone') return d.state === 'online' ? '轻桥网页开着' : (d.seen ? '上次 ' + when(d.seen) : '已连接');
+  if (d.state === 'online') return d.paused ? '对方暂停了同步' : '在线 · ' + (d.addr || '');
+  if (d.state === 'reverse') return '在线（只能由它连过来）';
+  if (d.error) return d.error;
+  return d.seen ? '离线 · ' + when(d.seen) : '等它上线';
+}
+
+function renderDevices() {
+  const all = [...S.devices, ...S.phones];
+  set($('devices'), all.map(d => {
+    const on = d.state !== 'offline';
+    return `<div class="dev ${on ? 'online' : ''}" data-dropdev="${d.id}">
+      <button class="more" data-menu="${d.id}" title="更多">${icon('more')}</button>
+      <div class="dic">${icon(devIcon(d))}<i class="dot ${on ? 'on' : ''}"></i></div>
+      <div class="dname" title="${esc(d.name)}">${esc(d.name)}</div>
+      <div class="dsub ${d.error && !on ? 'warn' : ''}" title="${esc(devSub(d))}">${esc(devSub(d))}</div>
+      <div class="dact"><button class="btn soft small" data-pick="${d.id}">${icon('send')}发文件</button>${d.pending ? `<span class="muted" style="font-size:12px;align-self:center">${d.pending} 项排队中</span>` : ''}</div>
+      ${openMenu === d.id ? `<div class="menu">
+        <button data-pick="${d.id}">${icon('file')}发文件</button>
+        <button data-pick-folder="${d.id}">${icon('folder')}发文件夹</button>
+        <button class="bad" data-remove="${d.id}">${icon('trash')}${d.kind === 'phone' ? '移除这部手机' : '移除这台电脑'}</button>
+      </div>` : ''}
+    </div>`;
+  }).join('') + `<div class="dev add" data-add>
+      <div class="dic">${icon('plus')}</div><b>添加设备</b><span style="font-size:12px">手机扫码，电脑自动发现</span>
+    </div>`);
+  $('devHint').textContent = all.length ? '把文件拖到设备上就能发过去' : '';
+}
+
+function nearHtml(n) {
+  let right, sub = esc(n.ip);
+  if (n.state === 'asking') right = `<span class="spin"></span><span class="muted">正在请求…</span>`;
+  else if (n.state === 'waiting') { sub = `请在“${esc(n.name)}”上点允许 · 核对码 <span class="code">${esc(n.code)}</span>`; right = `<span class="spin"></span><button class="btn ghost small" data-cancel="${n.id}">取消</button>`; }
+  else if (n.state === 'rejected') { sub = '对方点了拒绝'; right = `<button class="btn line small" data-connect="${n.id}">再试一次</button>`; }
+  else if (n.state === 'failed') { sub = `<span class="bad">${esc(n.error || '没连上')}</span>`; right = `<button class="btn line small" data-connect="${n.id}">再试一次</button>`; }
+  else right = `<button class="btn primary small" data-connect="${n.id}">${icon('link')}连接</button>`;
+  return `<div class="near"><div class="nic">${icon(devIcon(n))}</div><div class="grow"><div class="nn">${esc(n.name)}</div><div class="ns">${sub}</div></div>${right}</div>`;
+}
+
+function renderNearby(inWelcome) {
+  const show = !inWelcome && S.nearby.length > 0;
+  $('nearbyWrap').classList.toggle('hide', !show);
+  if (show) set($('nearby'), S.nearby.map(nearHtml).join(''));
+}
+
+function phonePanel() {
+  const ip = qrIp && S.me.addrs.some(a => a.ip === qrIp) ? qrIp : S.me.ip;
+  const url = `http://${ip}:${S.me.port}`;
+  const others = S.me.addrs.filter(a => a.ip !== ip);
+  return `<div class="panel">
+    <h3>${icon('phone')}连手机</h3>
+    <p>iPhone、安卓都行，不用装 App。手机和电脑连同一个 Wi-Fi。</p>
+    <div class="qrbox">
+      <div class="qr"><img alt="二维码" src="/api/local/qr?ip=${encodeURIComponent(ip)}&v=${S.pair.until}&${tok()}"></div>
+      <ol class="steps">
+        <li>打开手机相机，对准二维码</li>
+        <li>点弹出的链接，就连上了</li>
+        <li>以后在网页里点“分享 → 添加到主屏幕”，像 App 一样一点就开</li>
+      </ol>
+    </div>
+    <details class="fold"><summary>扫码打不开？</summary><div class="body">
+      <div>在手机浏览器里输入 <span class="addr">${esc(url)}</span>，然后在这台电脑上点“允许”。</div>
+      ${others.length ? `<div>电脑有好几个网络地址，换一个试试：${others.map(a => `<button class="btn line small" data-qrip="${a.ip}">${a.ip}</button>`).join(' ')}</div>` : ''}
+      <div>手机连的如果是“访客 Wi-Fi”，通常连不到电脑，换成主 Wi-Fi。</div>
+    </div></details>
+  </div>`;
+}
+
+function pcPanel() {
+  const url = `http://${S.me.ip}:${S.me.port}`;
+  return `<div class="panel">
+    <h3>${icon(S.me.form === 'laptop' ? 'laptop' : 'desktop')}连另一台电脑</h3>
+    <p>在那台电脑上也打开轻桥，它会自动出现在下面，点“连接”，再到那台电脑上点“允许”。</p>
+    <div class="nearby">${S.nearby.length ? S.nearby.map(nearHtml).join('') : `<div class="searching"><span class="spin"></span>${S.scanning ? '正在找同一网络里的轻桥…' : '还没找到，会一直自动找'}<div class="grow"></div><button class="btn ghost small" data-scan>${icon('refresh')}再找一次</button></div>`}</div>
+    <details class="fold"><summary>那台电脑还没有轻桥？</summary><div class="body">
+      <div>在那台电脑的浏览器里打开 <span class="addr">${esc(url)}/get</span>，下载后双击就能用，不用安装。</div>
+    </div></details>
+    <details class="fold"><summary>一直找不到？</summary><div class="body">
+      <div>1. 第一次打开轻桥时，Windows 会问“是否允许访问网络”，两台都要点“允许”。点错了：<button class="btn line small" data-firewall>${icon('shield')}允许轻桥通过防火墙</button></div>
+      <div>2. 手动输入那台电脑的地址（在它的轻桥“设置 → 网络”里能看到）：</div>
+      <div class="manual"><input class="input" id="manualAddr" placeholder="例如 192.168.1.8"><button class="btn primary small" data-manual>连接</button></div>
+    </div></details>
+  </div>`;
+}
+
+function welcomeHtml() {
+  return `<div class="hero"><h1>把这台电脑和你的其他设备连起来</h1><p>连一次就行。以后复制的文字、截图、文件，会自动出现在其他设备上，直接粘贴。</p></div>
+    <div class="welcome" style="margin-top:16px">${phonePanel()}${pcPanel()}</div>`;
+}
+
+function renderAdd() {
+  set($('addModal'), `<div class="box">
+    <div class="mh">${icon('plus')}<h2>添加设备</h2><div class="grow"></div><button class="iconbtn" data-close-add>${icon('x')}</button></div>
+    <div class="welcome">${phonePanel()}${pcPanel()}</div>
+  </div>`);
+}
+
+function feedTitle(f) {
+  if (f.kind === 'info') return esc(f.note || '');
+  if (f.kind === 'text') return '文字' + (f.chars > 0 ? ` <span class="muted">· ${f.chars} 字</span>` : '');
+  if (f.kind === 'image') return f.files.length ? esc(f.files[0].name) : '图片';
+  const n = f.files.length + (f.more || 0);
+  if (n === 1) return esc(f.files[0].name);
+  return n ? `${n} 个文件` : (f.kind === 'send' ? '文件' : '复制的文件');
+}
+function feedStatus(f) {
+  if (f.kind === 'info') return '';
+  const pct = f.total > 0 ? Math.min(100, Math.round(f.done * 100 / f.total)) : 0;
+  if (f.status === 'sending') return `<span class="status wait">${f.dir === 'out' && f.total ? '发送中 ' + pct + '%' : '发送中'}</span>`;
+  if (f.status === 'receiving') return `<span class="status wait">接收中 ${pct}%</span>`;
+  if (f.status === 'failed') return `<span class="status bad">${icon('x')}没成功</span>`;
+  if (f.status === 'waiting') return `<span class="status wait">等手机下载</span>`;
+  if (f.status === 'done') return `<span class="status ok">${icon('check')}${f.dir === 'out' ? (f.clip ? '已同步' : '已送达') : (f.clip ? '已同步' : '已收到')}</span>`;
+  return '';
+}
+function route(f) {
+  const to = (f.to || []).map(n => isMe(n) ? '本机' : n);
+  const from = isMe(f.from) ? '本机' : f.from;
+  if (f.kind === 'info') return '';
+  return `<span class="route">${esc(from || '')}${to.length ? ` ${icon('send')} ${esc(to.join('、'))}` : ''}</span>`;
+}
+
+function renderFeed() {
+  const items = S.feed;
+  $('clearFeed').classList.toggle('hide', items.length === 0);
+  set($('feed'), items.map(f => {
+    const kindIcon = f.kind === 'text' ? 'text' : f.kind === 'image' ? 'image' : f.kind === 'info' ? 'info' : f.files.length > 1 ? 'files' : 'file';
+    const anyFile = f.files.some(x => x.exists);
+    const busy = f.status === 'sending' || f.status === 'receiving';
+    const pct = f.total > 0 ? Math.min(100, f.done * 100 / f.total) : 0;
+    let body = '';
+    if (f.kind === 'text' && f.text) body += `<div class="ftext">${esc(f.text)}</div>`;
+    if (f.image && f.files[0] && f.files[0].exists && !busy) body += `<img class="thumb" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">`;
+    else if (f.files.length && !(f.image && f.files.length === 1 && busy)) body += `<div class="ffiles">${f.files.map((x, i) => `<button class="chip ${x.exists || busy ? '' : 'gone'}" ${x.exists ? `data-open="${f.id}" data-i="${i}"` : 'disabled'} title="${x.exists ? '打开' : '文件已不在'}">${icon('file')}<span>${esc(x.name)}</span><em>${size(x.size)}</em></button>`).join('')}${f.more ? `<span class="chip">还有 ${f.more} 个</span>` : ''}</div>`;
+    if (busy && f.total > 0) body += `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+    if (f.note && f.kind !== 'info') body += `<div class="fnote ${f.status === 'failed' ? 'bad' : ''}">${esc(f.note)}</div>`;
+    const acts = [];
+    if (f.kind === 'text' && f.text) acts.push(`<button class="btn ghost small" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}复制</button>`);
+    if ((f.kind === 'image' || f.kind === 'files' || f.kind === 'send') && anyFile && !busy) {
+      if (f.kind !== 'send') acts.push(`<button class="btn ghost small" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}复制</button>`);
+      acts.push(`<button class="btn ghost small" data-reveal="${f.id}" title="在文件夹中显示">${icon('folder')}位置</button>`);
+    }
+    if (f.status === 'failed' && f.dir === 'out') acts.push(`<button class="btn ghost small" data-retry="${f.id}">${icon('refresh')}重试</button>`);
+    acts.push(`<button class="iconbtn" style="width:28px;height:28px" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button>`);
+    return `<li class="fi">
+      <div class="fic">${icon(kindIcon)}${f.kind !== 'info' ? `<span class="dir ${f.dir}">${icon(f.dir === 'in' ? 'down' : 'up')}</span>` : ''}</div>
+      <div class="fb">
+        <div class="fh"><b>${feedTitle(f)}</b>${route(f)}<span>· ${when(f.time)}</span>${feedStatus(f)}</div>
+        ${body}
+      </div>
+      <div class="fa">${acts.join('')}</div>
+    </li>`;
+  }).join(''));
+}
+
+function sw(key, on) { return `<label class="switch"><input type="checkbox" data-set="${key}" ${on ? 'checked' : ''}><span></span></label>`; }
+
+function renderSettings() {
+  const st = S.settings, active = document.activeElement;
+  if (active && $('settings').contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox') return;
+  set($('settings'), `
+    <div class="dh"><h2>设置</h2><button class="iconbtn" data-close-settings>${icon('x')}</button></div>
+    <div class="group"><div class="gt">这台电脑</div><div class="gbox">
+      <div class="row"><div class="rl"><b>名字</b><small>其他设备上显示的名字</small></div><input class="input" style="width:180px;height:32px" id="nameInput" value="${esc(S.me.name)}" maxlength="40"></div>
+    </div></div>
+    <div class="group"><div class="gt">自动同步</div><div class="gbox">
+      <div class="row"><div class="rl"><b>复制的文字</b><small>这边复制，那边直接粘贴</small></div>${sw('syncText', st.syncText)}</div>
+      <div class="row"><div class="rl"><b>截图、图片和复制的文件</b><small>单次不超过 <input class="input num" id="limitInput" value="${st.autoLimitMB}"> MB，更大的拖到设备上发</small></div>${sw('syncFiles', st.syncFiles)}</div>
+      <div class="row"><div class="rl"><b>暂停全部同步</b><small>暂停时不收也不发</small></div>${sw('paused', st.paused)}</div>
+    </div></div>
+    <div class="group"><div class="gt">收到的文件</div><div class="gbox">
+      <div class="row"><div class="rl"><b>存放位置</b><small title="${esc(st.receiveFolder)}">${esc(st.receiveFolder)}</small></div><button class="btn line small" data-native="receive-folder">更改</button><button class="btn ghost small" data-native="open-receive">打开</button></div>
+      <div class="row"><div class="rl"><b>收到文件时提醒</b><small>右下角弹一条通知，点一下就能打开</small></div>${sw('notify', st.notify)}</div>
+    </div></div>
+    <div class="group"><div class="gt">Windows</div><div class="gbox">
+      <div class="row"><div class="rl"><b>开机自动启动</b><small>在后台运行，开机就能同步</small></div>${sw('autostart', st.autostart)}</div>
+      <div class="row"><div class="rl"><b>右键“发送到 → 轻桥”</b><small>在文件上右键就能发</small></div>${sw('sendTo', st.sendTo)}</div>
+    </div></div>
+    ${S.phones.length ? `<div class="group"><div class="gt">连过的手机</div><div class="gbox">
+      ${S.phones.map(p => `<div class="row"><div class="rl"><b>${esc(p.name)}</b><small>${p.state === 'online' ? '网页开着' : '上次 ' + when(p.seen)}</small></div><button class="btn danger small" data-remove="${p.id}">移除</button></div>`).join('')}
+    </div></div>` : ''}
+    <div class="group"><div class="gt">网络</div><div class="gbox">
+      <div class="row"><div class="rl"><b>本机地址</b><small>${S.me.addrs.length ? S.me.addrs.map(a => `<span class="addr">${a.ip}</span> ${esc(a.name)}`).join('<br>') : '没有连网'}</small><small>手机也可以用 <span class="addr">http://${esc(S.me.mdns)}:${S.me.port}</span></small></div></div>
+      <div class="row"><div class="rl"><b>找不到其他设备？</b><small>Windows 防火墙可能拦住了轻桥（尤其是网络被设成“公用”时）</small></div><button class="btn line small" data-firewall>${icon('shield')}放行</button></div>
+      <div class="row"><div class="rl"><b>重新查找</b><small>${S.scanning ? '正在找…' : S.lastScan ? '上次 ' + when(S.lastScan) : ''}${S.hop ? ' · 也在找上一级路由器 ' + S.hop + ' 下的电脑' : ''}</small></div><button class="btn line small" data-scan>${icon('refresh')}找一次</button></div>
+    </div></div>
+    <div class="group"><div class="gbox">
+      <div class="row"><div class="rl"><b>轻桥 ${esc(S.version)}</b><small>关窗口不会退出，右下角托盘里还在运行</small></div><button class="btn danger small" data-native="exit">退出轻桥</button></div>
+    </div></div>`);
+}
+
+// ───────────── 交互 ─────────────
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('button, [data-add], [data-zoom], .dev');
+  if (!t) { if (openMenu) { openMenu = null; render(); } return; }
+  const d = t.dataset;
+  if (d.menu !== undefined) { openMenu = openMenu === d.menu ? null : d.menu; render(); return; }
+  if (openMenu && !t.closest('.menu')) { openMenu = null; render(); }
+  if (d.answer) { await act('answer', { id: d.answer, allow: d.allow === '1' }, d.allow === '1' ? '已允许，正在连接' : null); return; }
+  if (d.connect) { await act('connect', { id: d.connect }); return; }
+  if (d.cancel) { await act('cancel-connect', { id: d.cancel }); return; }
+  if (d.pick || d.pickFolder) { openMenu = null; const r = await act('native', { cmd: 'pick', target: d.pick || d.pickFolder, folder: !!d.pickFolder }); if (r && r.count) toast('开始发送 ' + r.count + ' 项'); return; }
+  if (d.remove) {
+    const dev = [...S.devices, ...S.phones].find(x => x.id === d.remove);
+    openMenu = null;
+    if (!confirm(`移除“${dev ? dev.name : ''}”？\n\n移除后它不再自动同步，要用的话需要重新连接。`)) { render(); return; }
+    await act(d.remove.startsWith('phone:') ? 'remove-phone' : 'remove', { id: d.remove.replace(/^phone:/, '') }, '已移除'); return;
+  }
+  if (d.add !== undefined) { addOpen = true; $('addModal').classList.remove('hide'); renderAdd(); api('scan', {}).catch(() => {}); return; }
+  if (d.closeAdd !== undefined) { closeAdd(); return; }
+  if (d.qrip) { qrIp = d.qrip; render(); return; }
+  if (d.scan !== undefined) { await act('scan', {}, '正在重新查找'); return; }
+  if (d.firewall !== undefined) { const r = await act('native', { cmd: 'firewall' }); if (r) toast(r.ok ? '已放行。可以让另一台再找一次' : '没有完成（需要在弹出的窗口点“是”）', !r.ok); return; }
+  if (d.manual !== undefined) { const v = $('manualAddr').value.trim(); if (!v) { toast('先填地址', true); return; } await act('connect-address', { address: v }, '已找到，正在请求连接'); return; }
+  if (d.recopy) { await act('recopy', { id: d.recopy }, '已放进剪贴板'); return; }
+  if (d.open) { await act('native', { cmd: 'open', id: d.open, i: +d.i }); return; }
+  if (d.reveal) { await act('native', { cmd: 'reveal', id: d.reveal, i: 0 }); return; }
+  if (d.retry) { await act('retry', { id: d.retry }, '重新发送'); return; }
+  if (d.del) { await act('feed-remove', { id: d.del }); return; }
+  if (d.native) { if (d.native === 'exit' && !confirm('退出轻桥？退出后不再同步，也收不到文件。')) return; await act('native', { cmd: d.native }); return; }
+  if (d.sendPending) { await act('send', { target: d.sendPending, pending: true }, '开始发送'); return; }
+  if (d.cancelPending !== undefined) { await act('cancel-pending', {}); return; }
+  if (d.closeSettings !== undefined) { closeSettings(); return; }
+  if (d.zoom) { const img = document.createElement('div'); img.className = 'lightbox'; img.innerHTML = `<img src="${t.src}">`; img.onclick = () => img.remove(); document.body.appendChild(img); return; }
+});
+
+document.addEventListener('change', async e => {
+  const k = e.target.dataset.set;
+  if (k) {
+    const body = {}; body[k] = e.target.checked;
+    await act('settings', body, k === 'paused' ? (e.target.checked ? '已暂停' : '已恢复') : null);
+    return;
+  }
+  if (e.target.id === 'nameInput') { const v = e.target.value.trim(); if (v) await act('settings', { name: v }, '名字已改'); }
+  if (e.target.id === 'limitInput') { const v = parseInt(e.target.value, 10); if (v > 0) await act('settings', { autoLimitMB: v }, '已保存'); }
+});
+
+$('sync').onclick = () => act('settings', { paused: !S.settings.paused }, S.settings.paused ? '已恢复同步' : '已暂停同步');
+$('openSettings').onclick = () => { settingsOpen = true; renderSettings(); $('settings').classList.add('open'); $('scrim').classList.remove('hide'); };
+$('scrim').onclick = () => closeSettings();
+function closeSettings() { settingsOpen = false; $('settings').classList.remove('open'); $('scrim').classList.add('hide'); }
+function closeAdd() { addOpen = false; $('addModal').classList.add('hide'); }
+$('addModal').addEventListener('click', e => { if (e.target === $('addModal')) closeAdd(); });
+$('clearFeed').onclick = () => { if (confirm('清空动态？（不会删除收到的文件）')) act('feed-clear', {}); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSettings(); closeAdd(); if (S && S.pending) act('cancel-pending', {}); } });
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'manualAddr') document.querySelector('[data-manual]').click(); });
+
+// 改名字：点一下顶栏的名字
+$('me').onclick = () => {
+  if (editingName) return;
+  editingName = true;
+  $('me')._h = null;
+  $('me').innerHTML = `<span class="me-label">本机</span><input class="input" id="meInput" maxlength="40" value="${esc(S.me.name)}">`;
+  const i = $('meInput'); i.focus(); i.select();
+  const done = async save => { if (!editingName) return; editingName = false; const v = i.value.trim(); if (save && v && v !== S.me.name) await act('settings', { name: v }, '名字已改'); render(); };
+  i.onkeydown = ev => { if (ev.key === 'Enter') done(true); if (ev.key === 'Escape') done(false); };
+  i.onblur = () => done(true);
+};
+
+window.addEventListener('scroll', () => document.querySelector('.top').classList.toggle('scrolled', scrollY > 4));
+
+// ───────────── 拖文件进来 ─────────────
+
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragenter', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth++;
+  if (dragDepth === 1) showDrop();
+});
+window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (dragDepth === 0) hideDrop(); });
+window.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+  document.querySelectorAll('.dz').forEach(z => z.classList.toggle('over', z.contains(e.target)));
+});
+window.addEventListener('drop', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0;
+  const z = e.target.closest && e.target.closest('.dz');
+  hideDrop();
+  if (z && z.dataset.dz) sendFiles(z.dataset.dz, e.dataTransfer.files, z.dataset.name);
+});
+function showDrop() {
+  if (!S) return;
+  const all = [...S.devices, ...S.phones];
+  $('dzGrid').innerHTML = all.length ? all.map(d => `<div class="dz" data-dz="${d.id}" data-name="${esc(d.name)}">${icon(devIcon(d))}${esc(d.name)}<small>${d.state === 'offline' ? (d.kind === 'phone' ? '放进它的收件箱' : '上线后自动送达') : '在线'}</small></div>`).join('') : '<p class="muted">还没有连接其他设备，先添加一台。</p>';
+  $('dropzone').classList.remove('hide');
+}
+function hideDrop() { $('dropzone').classList.add('hide'); }
+async function sendFiles(target, files, name) {
+  if (!files || !files.length) return;
+  if (hasWebView) { chrome.webview.postMessageWithAdditionalObjects({ cmd: 'drop', target }, files); toast(`开始发给 ${name}：${files.length} 项`); return; }
+  // 在普通浏览器里打开时：先传到本机再发。
+  toast(`正在准备 ${files.length} 个文件…`);
+  for (const f of files) {
+    const r = await fetch(`/api/local/upload?target=${encodeURIComponent(target)}&name=${encodeURIComponent(f.name)}`, { method: 'POST', headers: { 'X-LB-Local': TOKEN }, body: f });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || '发送失败', true); return; }
+  }
+  toast(`开始发给 ${name}`);
+}
+if (window.chrome && chrome.webview) chrome.webview.addEventListener('message', e => { if (e.data && e.data.error) toast(e.data.error, true); });
+
+setInterval(() => { if (S) { renderFeed(); if (!S.devices.length && !S.phones.length) return; renderDevices(); } }, 30000);
+loop();

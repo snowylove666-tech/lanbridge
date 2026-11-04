@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>轻桥</title>
+<link rel="icon" href="/assets/icon.svg">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/desk.css">
+</head>
+<body>
+<header class="top">
+  <img class="logo" src="/assets/icon.svg" alt="">
+  <div class="brand">轻桥</div>
+  <button class="me" id="me" title="点一下改名字"><span class="me-label">本机</span><b id="meName">…</b></button>
+  <div class="grow"></div>
+  <button class="sync" id="sync"></button>
+  <button class="iconbtn" id="openSettings" title="设置"></button>
+</header>
+
+<main id="main">
+  <section id="requests"></section>
+  <section id="pending"></section>
+  <section id="welcome" class="hide"></section>
+  <section id="devicesWrap">
+    <div class="sec-head"><h2>我的设备</h2><span class="hint" id="devHint">把文件拖到设备上就能发过去</span></div>
+    <div class="devices" id="devices"></div>
+  </section>
+  <section id="nearbyWrap" class="hide">
+    <div class="sec-head"><h2>附近的电脑</h2><span class="hint">也开着轻桥，点“连接”后在那台电脑点“允许”</span></div>
+    <div class="nearby" id="nearby"></div>
+  </section>
+  <section id="feedWrap">
+    <div class="sec-head"><h2>动态</h2><span class="hint" id="feedHint"></span><div class="grow"></div><button class="btn ghost small" id="clearFeed">清空</button></div>
+    <ol class="feed" id="feed"></ol>
+  </section>
+</main>
+
+<div class="scrim hide" id="scrim"></div>
+<aside class="drawer" id="settings" aria-hidden="true"></aside>
+<div class="modal hide" id="addModal"></div>
+<div class="dropzone hide" id="dropzone"><div class="dz-title">松开，发到…</div><div class="dz-grid" id="dzGrid"></div></div>
+<div class="toast" id="toast"></div>
+<script src="/assets/icons.js"></script>
+<script src="/assets/desk.js"></script>
+</body>
+</html>

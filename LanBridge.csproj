@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    轻桥 2.0。用 .NET SDK 编译，目标是 Windows 10/11 自带的 .NET Framework 4.8：
+    别的电脑不用装任何运行库，复制一个 EXE 就能用。
+    WebView2 的托管 DLL 和加载器都打进 EXE，启动时按需释放。
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>LanBridge</AssemblyName>
+    <RootNamespace>LanBridge</RootNamespace>
+    <ApplicationIcon>LanBridge.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>2.0.0</Version>
+    <Product>轻桥 LanBridge</Product>
+    <Company>LanBridge</Company>
+    <Description>轻桥 · 电脑和手机互传</Description>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
+    <WebView2Ver>1.0.3650.58</WebView2Ver>
+    <WebView2Dir>$(NuGetPackageRoot)microsoft.web.webview2\$(WebView2Ver)\</WebView2Dir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="$(WebView2Ver)" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <EmbeddedResource Include="web\*.*" LogicalName="web/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="LanBridge.ico" LogicalName="app.ico" />
+    <EmbeddedResource Include="$(WebView2Dir)lib\net462\Microsoft.Web.WebView2.Core.dll" LogicalName="lib/Microsoft.Web.WebView2.Core.dll" />
+    <EmbeddedResource Include="$(WebView2Dir)lib\net462\Microsoft.Web.WebView2.WinForms.dll" LogicalName="lib/Microsoft.Web.WebView2.WinForms.dll" />
+    <EmbeddedResource Include="$(WebView2Dir)runtimes\win-x64\native\WebView2Loader.dll" LogicalName="lib/x64/WebView2Loader.dll" />
+    <EmbeddedResource Include="$(WebView2Dir)runtimes\win-x86\native\WebView2Loader.dll" LogicalName="lib/x86/WebView2Loader.dll" />
+    <EmbeddedResource Include="$(WebView2Dir)runtimes\win-arm64\native\WebView2Loader.dll" LogicalName="lib/arm64/WebView2Loader.dll" />
+  </ItemGroup>
+</Project>
