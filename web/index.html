@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <meta name="theme-color" content="#f4f6fa"><meta name="apple-mobile-web-app-capable" content="yes">
+ <title>轻桥 · 文件与文字互传</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+ <script src="/app.js" defer></script>
+</head>
+<body>
+ <header class="topbar"><a class="brand" href="/" aria-label="轻桥首页"><img src="/icon.svg" alt="" width="32" height="32"><span>轻桥</span></a><span id="connection" class="status offline"><i></i><span>正在检查连接</span></span></header>
+ <main>
+  <section id="pair-screen" class="pair-screen">
+   <div class="page-heading"><h1>连接电脑</h1><p class="muted">连接一次，以后打开本页就能互传。</p></div>
+   <form id="pair-form" class="card pair-card">
+    <h2 id="pair-computer">连接这台电脑</h2>
+    <label for="device-name">这台设备的名称</label><input id="device-name" value="我的 iPhone" maxlength="40" autocomplete="nickname" required>
+    <p id="local-join-hint" class="hint">同一 Wi-Fi／热点：点下方连接，再在电脑允许一次，无需扫码。</p>
+    <div id="join-wait" class="feedback" role="status" hidden></div>
+    <button id="cancel-join" class="text-button" type="button" hidden>取消等待</button>
+    <details id="pin-field" class="inline-details"><summary>使用电脑上的六位码连接</summary><label for="pair-code">6 位配对码</label><input id="pair-code" class="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000"></details>
+    <p id="qr-hint" class="hint" hidden>已识别配对链接，正在连接。</p>
+    <p id="pair-error" class="feedback error" role="alert" hidden></p>
+    <button id="pair-submit" class="primary full" type="submit">连接电脑</button>
+    <p id="pair-network-hint" class="small muted">电脑需开机，并运行轻桥。请让两台设备连接同一 Wi-Fi，或让电脑连接手机热点。</p>
+   </form>
+   <p id="network-note" class="local-note">局域网 HTTP，未加密。请使用自己的 Wi-Fi／热点。</p>
+  </section>
+
+  <section id="app-screen" hidden>
+   <div class="page-heading connected-heading"><div><p class="eyebrow">已配对的电脑</p><h1 id="computer-name">正在连接…</h1></div><span id="my-name" class="device-name">此设备</span></div>
+   <div id="offline-banner" class="banner" role="status" hidden><span id="connection-error">正在连接电脑…</span><button id="retry" type="button">重试连接</button></div>
+   <nav class="tabs" aria-label="功能"><button class="tab active" data-tab="files" aria-pressed="true">文件</button><button class="tab" data-tab="clipboard" aria-pressed="false">文字</button><button class="tab" data-tab="guide" aria-pressed="false">设置与帮助</button></nav>
+   <section id="pane-files" class="pane" aria-label="文件互传">
+    <div class="card upload-card" id="drop-zone"><div><h2>发到电脑</h2><p id="upload-limit" class="small muted">照片、视频、文档，单个最大 1 GB。</p></div><label class="primary picker" for="file-picker">选择文件或照片</label><input id="file-picker" type="file" multiple class="file-input"><p class="small muted drop-hint">也可以拖入文件</p><div class="paste-files"><label for="paste-files">粘贴图片或文件后直接发送</label><textarea id="paste-files" rows="2" placeholder="点这里，长按选择“粘贴”；电脑可按 Ctrl + V" aria-describedby="paste-files-help" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea><p id="paste-files-help" class="small muted">仅发送本次粘贴提供的图片或文件。若系统未提供附件，请用“选择文件或照片”。发送时保持页面前台。</p></div></div>
+    <div id="upload-progress" class="card progress-card" hidden><div class="card-heading"><strong id="progress-name">正在发送</strong><button id="cancel-upload" class="text-button" type="button">取消发送</button></div><progress id="progress-bar" max="100" value="0"></progress><p id="progress-detail" class="small muted" aria-live="polite">准备中…</p></div>
+    <p id="upload-result" class="feedback" role="status" hidden></p>
+    <div class="card receive-card"><div class="card-heading"><h2>从电脑接收</h2><span id="outbox-count" class="count">—</span></div><p class="small muted">下载后，在浏览器下载列表中查看或存入“文件”。</p><div id="outbox-list" class="file-list"></div><div id="outbox-wait" class="empty" hidden>等待连接电脑后更新文件列表。</div><div id="outbox-empty" class="empty" hidden><p>电脑还没有分享文件</p><small>在电脑轻桥的“文件”页添加文件后，这里会自动出现。</small></div></div>
+    <details class="card history-card"><summary>电脑最近收到的文件 <span id="sent-count" class="muted">—</span></summary><p class="small muted">已保存至电脑的 Received 文件夹。这里也会显示其他已配对设备的发送记录。</p><div id="sent-list" class="file-list"></div><p id="sent-empty" class="empty small">还没有接收记录。</p></details>
+   </section>
+   <section id="pane-clipboard" class="pane" aria-label="文字互传" hidden>
+    <p id="clip-guidance" class="hint">日常可用“轻点背面”收发文字。首次在“设置与帮助”配置系统快捷指令。</p>
+    <div class="file-grid">
+     <div class="card clip-card"><div class="card-heading"><h2>接收电脑文字</h2><span id="clip-age" class="small muted"></span></div><div id="clip-preview" class="clip-preview" tabindex="0">暂无共享文字</div><p id="clip-source" class="small muted">在电脑复制文字，并开启自动共享。</p><button id="copy-clip" class="primary full" type="button" disabled>复制到本机</button><p id="copy-result" class="feedback" role="status" hidden></p><p id="copy-fallback" class="hint" hidden>请长按上方文字，选择“全选 → 复制”。也可以用已配置的“轻桥同步”快捷指令。</p></div>
+     <form id="send-text-form" class="card clip-card"><h2>发到电脑</h2><label for="send-text">长按下方输入框粘贴，或直接输入</label><textarea id="send-text" placeholder="要发送的文字…" maxlength="500000" required></textarea><div class="button-row"><button type="button" id="paste-text" class="secondary">粘贴</button><button id="send-text-button" class="primary" type="submit">发送到电脑</button></div><p id="send-result" class="feedback" role="status" hidden></p><p class="small muted">发送成功后，在电脑直接 Ctrl + V。共享文字 10 分钟后过期。</p></form>
+    </div>
+    <details class="card quick-sync-card" id="quick-sync-card"><summary>网页智能同步</summary><p id="quick-sync-help" class="small muted">自动判断收发，首次只初始化。两端都有变化时，本次手机文字优先。浏览器可能要求允许粘贴。</p><button id="quick-sync" class="secondary" type="button">同步一次</button><p id="quick-sync-result" class="feedback" role="status" hidden></p></details>
+   </section>
+   <section id="pane-guide" class="pane" aria-label="设置与帮助" hidden>
+    <div class="card"><h2>当前连接</h2><p id="setup-status" class="small muted">正在检查电脑设置…</p><p id="connection-address" class="connection-address"></p><p id="remote-guide-note" class="hint" hidden>这是临时跨网地址，到期后需重新连接。它不会修改原背面快捷指令的局域网地址。</p></div>
+    <details class="card guide-intro"><summary>设置轻点背面 · 日常少操作</summary><p>电脑复制 → 手机轻点背面 → 粘贴。手机复制 → 同样轻点背面 → 电脑 Ctrl + V。</p><p class="small muted">首次需手动创建系统快捷指令。本版没有一键导入包；复制下方说明不会自动安装指令。仅同步文字和网址，图片与文件请用“文件”页。</p><button id="copy-setup" class="secondary" type="button">复制配置说明</button><p id="guide-result" class="feedback" role="status" hidden></p>
+     <div class="guide-step"><h3>1. 电脑开启自动共享</h3><p>在电脑的“剪贴板”页开启“自动共享电脑复制的文字”。需要常驻时，在设置中开启登录 Windows 后启动。</p><p class="small muted">开启后，新的复制内容可能被已配对设备读取，包括敏感文字。</p></div>
+     <div class="guide-step"><h3>2. 创建“轻桥同步”快捷指令</h3><ol>
+      <li>在系统“快捷指令”中创建新指令，添加<strong>“获取剪贴板”</strong>。</li>
+      <li>添加<strong>“URL”</strong>，填入同步地址。<div class="code-box"><code id="sync-url"></code><button class="text-button" id="copy-sync-url" type="button">复制</button></div></li>
+      <li>添加<strong>“获取 URL 内容”</strong>，方法 <b>POST</b>。添加头部 <code>Authorization</code>，值使用下方授权头。请求体选 <b>JSON</b>：文本字段 <code>mode</code> 填 <code>smart</code>；文本字段 <code>text</code> 选择第 1 步的<strong>“剪贴板”变量</strong>。将返回结果设为变量<strong>“同步结果”</strong>。</li>
+      <li>从“同步结果”<strong>获取词典值 <code>copy</code></strong>，添加<strong>“如果”</strong>，条件为“真”。</li>
+      <li>在“如果”为真分支，从“同步结果”获取 <code>text</code> → <strong>“拷贝至剪贴板”</strong>。如果有“仅本地”选项，开启。只在这个分支拷贝。</li>
+      <li>在拷贝成功之后，从“同步结果”获取 <code>receipt</code>。再添加<strong>“获取 URL 内容”</strong>，使用下方确认地址，方法 <b>POST</b>、授权头相同，JSON 字段 <code>receipt</code> 选择取得的 receipt 变量。<div class="code-box"><code id="ack-url"></code><button class="text-button" id="copy-ack-url" type="button">复制</button></div></li>
+      <li>结束“如果”。从“同步结果”获取 <code>message</code>，添加<strong>“显示通知”</strong>，内容选 message。熟悉后可删除通知操作。</li>
+     </ol><div class="credential"><h3>两次请求共用的授权头</h3><p class="small muted">头部名称：Authorization。下方复制的值已包含 Bearer 和空格，仅放入自己的指令。</p><button id="copy-auth" class="secondary" type="button">复制授权头值</button><details class="inline-details"><summary>显示授权头值</summary><code id="auth-value" class="secret"></code></details></div></div>
+     <div class="guide-step"><h3>3. 绑定轻点背面</h3><p>iPhone“设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下”，选择<strong>“轻桥同步”</strong>。</p><p class="hint">首次运行只初始化。之后在任一端复制新文字，再轻点背面测试一次。电脑需开机，并运行轻桥。</p></div>
+     <details class="inline-details"><summary>同步规则与限制</summary><p class="small muted">手机文字发生变化就发送，否则接收两分钟内的新电脑文字。两边都有变化时，本次手机文字优先。iPhone 不提供真实复制时间，无法严格按实际复制先后排序；重复复制相同文字也无法可靠识别。没有新内容时保留原剪贴板。</p><p class="small muted">局域网入口适合日常快捷指令。使用固定 .local 地址可以减少 IP 变更影响；热点屏蔽 mDNS 时需要备用 IP，IP 改变后需更新指令。跨网临时地址到期后失效。</p></details>
+    </details>
+    <details class="card troubleshooting"><summary>连不上、复制或传输失败</summary><ul><li>先看页面顶部的原因，再点“重试连接”。若显示“互传已暂停”，在电脑恢复即可。</li><li>同网连接时，两台设备应使用同一 Wi-Fi／热点，避免访客网络。检查 VPN 是否允许局域网。</li><li>Windows 防火墙提示时允许轻桥访问专用网络。无需关闭整个防火墙。</li><li>浏览器不允许访问剪贴板时，可以长按预览复制、长按输入框粘贴，或使用快捷指令。</li><li>文件发送中请保持页面前台。若提示“结果未确认”，先检查电脑接收记录，避免重复发送。</li><li>点击下载只会交给浏览器处理。保存是否完成，请在浏览器下载列表查看。</li></ul></details>
+    <details class="card troubleshooting"><summary>旧版接口与手动同步模式</summary><p class="small muted">现有快捷指令继续兼容。可将智能指令的 mode 改为 receive，明确接收；改为 send，明确发送。</p><div class="code-box"><code id="receive-url"></code><button class="text-button" id="copy-receive-url" type="button">复制</button></div><div class="code-box"><code id="send-url"></code><button class="text-button" id="copy-send-url" type="button">复制</button></div></details>
+    <button id="unpair" class="danger-button" type="button">撤销这台设备的连接</button><p class="small muted">撤销后，本页和已配置的快捷指令都需要重新配对。</p>
+   </section>
+   <footer id="network-footer">轻桥 1.5 · 本地直传 · 局域网 HTTP，未加密</footer>
+  </section>
+ </main>
+ <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
