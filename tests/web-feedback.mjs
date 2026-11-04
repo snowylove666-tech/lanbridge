@@ -1,0 +1,64 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+
+const here=path.dirname(fileURLToPath(import.meta.url));
+const source=fs.readFileSync(path.join(here,'../web/app.js'),'utf8');
+const html=fs.readFileSync(path.join(here,'../web/index.html'),'utf8');
+const credential='a'.repeat(64);
+const state={computer:'Generated PC',name:'Generated phone',autoClipboard:true,syncInitialized:true,clipboard:{text:'Generated text',source:'Windows',time:new Date().toISOString(),expiresIn:600},files:[]};
+const response=(data,status=200)=>({ok:status>=200&&status<300,status,json:async()=>data});
+class Element {
+ constructor(id='') { this.id=id;this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.children=[];this.events={};this.dataset={};this.className='';const classes=new Set();this.classList={add:x=>classes.add(x),remove:x=>classes.delete(x),toggle:(x,yes)=>yes?classes.add(x):classes.delete(x),contains:x=>classes.has(x)}; }
+ addEventListener(name,fn) { (this.events[name] ||= []).push(fn); }
+ async fire(name,event={}) { for(const fn of this.events[name] || [])await fn({preventDefault(){},target:this,...event}); }
+ setAttribute(name,value) { this[name]=value; }
+ append(...elements) { this.children.push(...elements); }
+ replaceChildren(...elements) { this.children=elements; }
+ querySelector() { return this.children[0] ||= new Element(); }
+ focus(){} select(){} setSelectionRange(){} remove(){} click(){this.fire('click');}
+ requestSubmit(){this.fire('submit');}
+}
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
+async function harness({secure=false,stored='',routes={},clipboard={}}={}) {
+ const elements=Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(x=>[x[1],new Element(x[1])]));
+ const tabs=['files','clipboard','guide'].map(name=>{const e=new Element();e.dataset.tab=name;return e;});
+ elements['pair-code'].value='';elements['device-name'].value='Generated phone';
+ const calls=[],timers=new Map();let nextTimer=0;
+ const context={
+  document:{getElementById:id=>{assert.ok(elements[id],`Unknown DOM id ${id}`);return elements[id];},querySelectorAll:()=>tabs,createElement:()=>new Element(),body:new Element(),activeElement:null,hidden:false,addEventListener(){},execCommand:()=>false},
+  window:{isSecureContext:secure,scrollY:0,scrollTo(){}},navigator:{clipboard},
+  location:{protocol:secure?'https:':'http:',hash:'',origin:secure?'https://generated.test':'http://192.168.1.2:49321',pathname:'/'},
+  history:{replaceState(){}},localStorage:{getItem:()=>stored,setItem(){},removeItem(){}},
+  URLSearchParams,AbortController,Blob,console,confirm:()=>true,
+  setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
+  fetch:async(route,options)=>{calls.push({route,options});const fn=routes[route];return fn?await fn(options):response(route==='/v1/connection'?{remote:secure,maxFile:secure?94371840:1073741824,computer:'Generated PC'}:state);},
+ };
+ const xhrs=[];
+ context.XMLHttpRequest=class {constructor(){this.upload={};xhrs.push(this);}open(method,url){this.url=url;}setRequestHeader(){}send(file){this.file=file;}abort(){this.onabort();}};
+ vm.createContext(context);vm.runInContext(source,context);await settle();
+ return {elements,tabs,calls,timers,xhrs,context,run:code=>vm.runInContext(code,context)};
+}
+let count=0;
+async function check(name,fn){await fn();count++;console.log('PASS '+name);}
+await check('HTTP hides unavailable smart clipboard and direct paste controls',async()=>{const h=await harness();assert.equal(h.elements['quick-sync-card'].hidden,true);assert.equal(h.elements['paste-text'].hidden,true);assert.ok(h.elements['cancel-join'].events.click);});
+await check('paused service stays paired and explains recovery instead of generic offline',async()=>{const h=await harness({stored:credential,routes:{'/v1/state':()=>response({error:'互传已暂停'},503)}});assert.equal(h.elements['pair-screen'].hidden,true);assert.match(h.elements['connection-error'].textContent,/暂停/);assert.equal(h.elements.connection.querySelector().textContent,'电脑互传已暂停');assert.equal(h.elements['outbox-empty'].hidden,true);assert.match(h.elements['outbox-wait'].textContent,/等待连接/);assert.equal(h.elements['file-picker'].disabled,true);});
+await check('first pairing opens files without forcing shortcut tutorial',async()=>{const h=await harness({routes:{'/v1/pair':()=>response({token:credential})}});h.elements['pair-code'].value='123456';await h.elements['pair-form'].fire('submit');assert.equal(h.elements['pane-files'].hidden,false);assert.equal(h.elements['pane-guide'].hidden,true);assert.equal(h.elements['computer-name'].textContent,'Generated PC');});
+await check('copy result persists and denied copy displays manual fallback',async()=>{const h=await harness({secure:true,stored:credential,clipboard:{writeText:async()=>{}}});await h.elements['copy-clip'].fire('click');assert.match(h.elements['copy-result'].textContent,/已复制/);assert.equal(h.elements['copy-result'].hidden,false);h.context.navigator.clipboard.writeText=async()=>{throw new Error('denied');};await h.elements['copy-clip'].fire('click');assert.equal(h.elements['copy-fallback'].hidden,false);assert.match(h.elements['copy-result'].textContent,/未完成/);});
+await check('clipboard copy succeeds even when recording acknowledgment fails',async()=>{const h=await harness({secure:true,stored:credential,clipboard:{readText:async()=>'generated baseline',writeText:async()=>{}},routes:{'/v1/sync':()=>response({copy:true,text:'generated incoming',receipt:'generated receipt'}),'/v1/ack':()=>response({error:'generated outage'},503)}});await h.elements['quick-sync'].fire('click');await settle();assert.equal(h.elements['quick-sync-result'].hidden,false);assert.match(h.elements['quick-sync-result'].textContent,/已复制.*未确认/);assert.equal(h.elements['quick-sync-result'].className,'feedback warning');});
+await check('unconfirmed sending preserves input and warns against blind duplicate send',async()=>{const h=await harness({stored:credential,routes:{'/v1/clipboard':()=>{throw new TypeError('network failure');}}});h.elements['send-text'].value='generated outgoing';await h.elements['send-text-form'].fire('submit');assert.equal(h.elements['send-text'].value,'generated outgoing');assert.match(h.elements['send-result'].textContent,/可能已经送达/);assert.equal(h.elements['send-result'].hidden,false);});
+await check('stale session responses cannot update new pairing',async()=>{const h=await harness();let finish;h.context.fetch=()=>new Promise(resolve=>finish=resolve);const pending=h.run("api('/v1/state')");h.run(`storeToken('${credential}')`);finish(response({...state,computer:'STALE HOST'}));await assert.rejects(pending,error=>error.silent===true);assert.equal(h.elements['computer-name'].textContent,'Generated PC');});
+await check('cancel authorization ends waiting and prevents further join polling',async()=>{const h=await harness({routes:{'/v1/join':()=>response({key:'generated key',check:'1234'})}});const pending=h.elements['pair-form'].fire('submit');await settle();assert.equal(h.elements['cancel-join'].hidden,false);await h.elements['cancel-join'].fire('click');await pending;assert.equal(h.elements['pair-submit'].disabled,false);assert.equal(h.calls.filter(x=>x.route==='/v1/join/poll').length,0);assert.match(h.elements['pair-error'].textContent,/已取消/);});
+await check('network interrupted upload is unconfirmed rather than falsely not saved',async()=>{const h=await harness({stored:credential});const pending=h.run("uploadFiles([{name:'generated.bin',size:4}])");assert.equal(h.xhrs.length,1);h.xhrs[0].onerror();await pending;assert.match(h.elements['upload-result'].textContent,/保存结果未确认/);assert.match(h.elements['upload-result'].textContent,/Received/);assert.doesNotMatch(h.elements['upload-result'].textContent,/不会保留/);});
+await check('saved files require server confirmation and duplicate upload clicks are ignored',async()=>{const h=await harness({stored:credential});const pending=h.run("uploadFiles([{name:'generated.bin',size:4}])");await h.run("uploadFiles([{name:'generated duplicate.bin',size:4}])");assert.equal(h.xhrs.length,1);h.xhrs[0].status=200;h.xhrs[0].responseText='{"id":"generated"}';h.xhrs[0].onload();await pending;assert.match(h.elements['upload-result'].textContent,/1 个文件已确认保存/);});
+function acknowledge(xhr,id='generated') {xhr.status=200;xhr.responseText=JSON.stringify({id});xhr.onload();}
+await check('user paste works over HTTP without reading the clipboard and avoids duplicate items',async()=>{let reads=0,itemReads=0,prevented=0;const h=await harness({stored:credential,clipboard:{readText:async()=>{reads++;throw new Error('must not read');}}});assert.equal(h.elements['paste-files'].disabled,false);assert.equal(h.xhrs.length,0);const image={name:'generated.png',size:12,type:'image/png'};const pending=h.elements['paste-files'].fire('paste',{preventDefault(){prevented++;},clipboardData:{files:[image],items:[{kind:'file',getAsFile(){itemReads++;return image;}}]}});assert.equal(prevented,1);assert.equal(reads,0);assert.equal(itemReads,0);assert.equal(h.xhrs.length,1);assert.equal(h.xhrs[0].file,image);assert.equal(h.elements['paste-files'].disabled,true);acknowledge(h.xhrs[0]);await pending;assert.equal(h.elements['paste-files'].disabled,false);assert.match(h.elements['upload-result'].textContent,/1 个文件已确认保存/);});
+await check('paste falls back to file items and assigns a PNG name without changing bytes',async()=>{const h=await harness({stored:credential});const image={size:16,type:'image/png'};const pending=h.elements['paste-files'].fire('paste',{clipboardData:{files:[],items:[{kind:'string',getAsFile(){throw new Error('not a file');}},{kind:'file',getAsFile:()=>null},{kind:'file',getAsFile:()=>image}]}});assert.equal(h.xhrs.length,1);assert.match(decodeURIComponent(h.xhrs[0].url),/粘贴附件-\d+-1\.png$/);assert.equal(h.xhrs[0].file,image);acknowledge(h.xhrs[0]);await pending;});
+await check('multiple pasted files retain names and upload once in order',async()=>{const h=await harness({stored:credential});const files=[{name:'generated.pdf',size:20},{name:'generated.zip',size:30}];const pending=h.elements['paste-files'].fire('paste',{clipboardData:{files}});assert.equal(h.xhrs.length,1);assert.equal(h.xhrs[0].file,files[0]);acknowledge(h.xhrs[0],'first');await settle();assert.equal(h.xhrs.length,2);assert.equal(h.xhrs[1].file,files[1]);assert.match(h.xhrs[1].url,/generated\.zip$/);acknowledge(h.xhrs[1],'second');await pending;assert.match(h.elements['upload-result'].textContent,/2 个文件已确认保存/);});
+await check('text or inaccessible clipboard paste never submits text or files',async()=>{const h=await harness({stored:credential});for(const clipboardData of [null,{files:[],items:[{kind:'string'}]}])await h.elements['paste-files'].fire('paste',{clipboardData});assert.equal(h.xhrs.length,0);assert.equal(h.calls.filter(call=>call.route==='/v1/clipboard').length,0);assert.equal(h.elements['paste-files'].value,'');assert.match(h.elements['upload-result'].textContent,/没有提供图片或文件/);assert.match(h.elements['upload-result'].textContent,/选择文件或照片/);});
+await check('offline paste is blocked with a recovery message',async()=>{const h=await harness({stored:credential,routes:{'/v1/state':()=>response({error:'互传已暂停'},503)}});assert.equal(h.elements['paste-files'].disabled,true);await h.elements['paste-files'].fire('paste',{clipboardData:{files:[{name:'generated.png',size:12}]}});assert.equal(h.xhrs.length,0);assert.match(h.elements['upload-result'].textContent,/尚未连接/);});
+await check('oversized paste and more than 32 files are rejected before upload',async()=>{const h=await harness({stored:credential});await h.elements['paste-files'].fire('paste',{clipboardData:{files:[{name:'generated.bin',size:1073741825}]}});assert.match(h.elements['upload-result'].textContent,/单个文件最大/);await h.elements['paste-files'].fire('paste',{clipboardData:{files:Array.from({length:33},(_,i)=>({name:`generated-${i}.txt`,size:1}))}});assert.equal(h.xhrs.length,0);assert.match(h.elements['upload-result'].textContent,/最多发送 32/);});
+await check('repeated paste during transfer does not enqueue duplicate files',async()=>{const h=await harness({stored:credential});const event={clipboardData:{files:[{name:'generated.png',size:12}]}};const pending=h.elements['paste-files'].fire('paste',event);await h.elements['paste-files'].fire('paste',event);assert.equal(h.xhrs.length,1);assert.match(h.elements['upload-result'].textContent,/仍在发送/);acknowledge(h.xhrs[0]);await pending;assert.match(h.elements['upload-result'].textContent,/1 个文件已确认保存/);});
+console.log(`Passed ${count} web feedback checks. DOM and transport are simulated; Safari permissions require a real iPhone.`);
