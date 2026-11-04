@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+
 namespace LanBridge {
  // Windows closes the child process even if the parent is force terminated.
  sealed class ChildJob : SafeHandleZeroOrMinusOneIsInvalid {
