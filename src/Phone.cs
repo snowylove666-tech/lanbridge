@@ -44,7 +44,7 @@ sealed class PhoneHub {
 
  public object JoinIn(Dictionary<string, object> d, Req q) {
   if (C.paused) throw new ApiError(503, "电脑上的轻桥暂停了");
-  var r = new JoinReq { id = Crypto.Token(12), kind = "phone", name = Util.Clip(string.IsNullOrWhiteSpace(d.Get("name")) ? "我的 iPhone" : d.Get("name"), 30), ip = q.Remote.ToString(), code = (BitConverter.ToUInt32(Crypto.Random(4), 0) % 10000).ToString("D4"), until = Util.Ms() + 120000 };
+  var r = new JoinReq { id = Crypto.Token(12), kind = "phone", name = Util.Clip(string.IsNullOrWhiteSpace(d.Get("name")) ? "我的 iPhone" : d.Get("name"), 30), ip = q.Via != null ? null : q.Remote.ToString(), code = (BitConverter.ToUInt32(Crypto.Random(4), 0) % 10000).ToString("D4"), until = Util.Ms() + 120000 };
   lock (Gate) {
    app.Hub.Requests.RemoveAll(x => x.until < Util.Ms());
    if (app.Hub.Requests.Count(x => x.kind == "phone") >= 5) throw new ApiError(429, "请求太多，请稍后再试");
@@ -92,7 +92,7 @@ sealed class PhoneHub {
  public object State(Phone p, long since) {
   long rev = since > 0 ? changes.Wait(since, 25000) : changes.Rev;
   lock (Gate) p.seen = Util.Ms();
-  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, clip = ClipView(p), inbox = Inbox(p) };
+  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
  }
 
  object ClipView(Phone p) {
@@ -113,6 +113,8 @@ sealed class PhoneHub {
   if (!app.Clip.WriteText(text)) throw new ApiError(409, "电脑剪贴板正被别的程序占用，请再试一次");
   app.Hub.LocalCopy("text", text, null, p.name);
   lock (Gate) { p.baseline = Crypto.Sha(text); p.init = true; p.lastClip = app.Hub.Latest?.id; app.Save(); }
+  app.History.Add(p, "text", text, null);
+  if (C.notify) app.Notify("收到 " + p.name + " 的文字", Util.Clip(text.Replace("\r", " ").Replace("\n", " "), 60) + "\n已放进剪贴板，直接 Ctrl+V", app.ShowWindow);
   return new { ok = true, message = "已放进电脑剪贴板" };
  }
 
@@ -150,9 +152,14 @@ sealed class PhoneHub {
  void Deliver(Phone p, List<string> paths, bool clip) {
   string[] imageExt = { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".heic", ".tif", ".tiff" };
   bool oneImage = paths.Count == 1 && imageExt.Contains(Path.GetExtension(paths[0]).ToLowerInvariant()) && Path.GetExtension(paths[0]).ToLowerInvariant() != ".heic";
+  app.History.Add(p, oneImage ? "image" : "files", null, paths);
   if (clip) {
    bool ok = oneImage ? app.Clip.WriteImage(paths[0]) : app.Clip.WriteFiles(paths.ToArray());
-   if (ok) { app.Hub.LocalCopy(oneImage ? "image" : "files", null, paths.ToArray(), p.name); return; }
+   if (ok) {
+    app.Hub.LocalCopy(oneImage ? "image" : "files", null, paths.ToArray(), p.name);
+    if (C.notify) app.Notify("收到 " + p.name + " 的" + (oneImage ? "照片" : paths.Count + " 个文件"), "已放进剪贴板，直接 Ctrl+V", app.ShowWindow);
+    return;
+   }
   }
   app.Feed.Add(new FeedItem { id = Crypto.Token(12), kind = "send", dir = "in", from = p.name, to = new List<string> { C.deviceName }, status = "done", total = paths.Sum(x => new FileInfo(x).Length), image = oneImage, files = paths.Select(x => new FeedFile { name = Path.GetFileName(x), path = x, size = new FileInfo(x).Length }).ToList(), note = "已存到“" + Path.GetFileName(C.receiveFolder.TrimEnd('\\')) + "”文件夹" });
   if (C.notify) app.Notify("收到 " + (paths.Count == 1 ? Path.GetFileName(paths[0]) : paths.Count + " 个文件"), "来自 " + p.name + "，点这里打开", () => Shell.Reveal(paths[0]));
@@ -216,19 +223,26 @@ sealed class PhoneHub {
  }
 
  /// <summary>
- /// 判断这次轻点该往哪边同步。两边都有新内容时：电脑上 1 分钟内刚复制的算电脑的，否则算手机的。
+ /// 判断这次轻点（或切 App 自动运行）该往哪边同步。
+ /// 手机剪贴板比上次运行时变了 = 手机刚复制的，发到电脑（不会被电脑的覆盖）；
+ /// 很久没运行过、分不清手机的是新是旧时：电脑 1 分钟内刚复制的优先。
+ /// 电脑的文字 5 分钟内复制、手机还没拿过的，才放进手机剪贴板。
  /// </summary>
  (string action, string text, string receipt, string message) Decide(Phone p, string text, string mode, bool autoAck) {
   var latest = app.Hub.Latest;
-  bool pcNew, pcRecent;
+  bool pcNew, pcRecent, fresh;
+  string sha = Crypto.Sha(text);
   lock (Gate) {
-   pcNew = latest?.kind == "text" && latest.id != p.lastClip && latest.via != p.name && Util.Ms() - latest.stamp < 10 * 60 * 1000;
+   long now = Util.Ms();
+   pcNew = latest?.kind == "text" && latest.id != p.lastClip && latest.via != p.name && now - latest.stamp < 5 * 60 * 1000;
    if (mode == "receive") pcNew = latest?.kind == "text";
-   pcRecent = pcNew && Util.Ms() - latest.stamp < 60000;
+   pcRecent = pcNew && now - latest.stamp < 60000;
+   fresh = p.lastReportAt > 0 && now - p.lastReportAt < 10 * 60 * 1000 && sha != p.lastReport;
+   if (text.Length > 0) { p.lastReport = sha; p.lastReportAt = now; }
   }
-  bool phoneNew = mode != "receive" && text.Length > 0 && Crypto.Sha(text) != p.baseline;
-  if (phoneNew && pcNew && latest.text == text) { lock (Gate) { p.baseline = Crypto.Sha(text); p.lastClip = latest.id; app.Save(); } return ("noop", text, "", "两边已经一样了。"); }
-  if (phoneNew && !pcRecent) {
+  bool phoneNew = mode != "receive" && text.Length > 0 && sha != p.baseline;
+  if (phoneNew && pcNew && latest.text == text) { lock (Gate) { p.baseline = sha; p.lastClip = latest.id; app.Save(); } return ("noop", text, "", "两边已经一样了。"); }
+  if (phoneNew && (fresh || !pcRecent)) {
    TextIn(p, new Dictionary<string, object> { ["text"] = text });
    return ("sent", text, "", "已发到电脑，可以直接粘贴。");
   }
@@ -251,6 +265,9 @@ sealed class PhoneHub {
   string type = q.H("Content-Type").ToLowerInvariant();
   if (type.StartsWith("image/")) {
    var bytes = q.ReadAll(64 * 1024 * 1024);
+   string h = Crypto.Sha(bytes);
+   bool same; lock (Gate) { same = p.imageHash == h; p.imageHash = h; }
+   if (same) { res.Bytes(bytes, type.Split(';')[0]); return; }
    string ext = type.Contains("png") ? ".png" : type.Contains("jpeg") || type.Contains("jpg") ? ".jpg" : type.Contains("heic") ? ".heic" : type.Contains("gif") ? ".gif" : ".png";
    Directory.CreateDirectory(C.receiveFolder);
    string path = Util.Reserve(C.receiveFolder, p.name + " 图片 " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss") + ext);

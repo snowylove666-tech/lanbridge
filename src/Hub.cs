@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LanBridge;
 
@@ -32,8 +33,8 @@ sealed class InEvent {
 /// <summary>和另一台电脑的连接状态。每台一个，后台两个线程：一个负责连接和推送，一个负责长轮询拉取。</summary>
 sealed class Link {
  public readonly string Id; public Member M;
- public volatile string Url, Error; public volatile bool PushOk, Stopped;
- public long LastOk, LastIn, LastHello, Offset; public int Fails;
+ public volatile string Url, Error; public volatile bool PushOk, Stopped, ViaRelay;
+ public long LastOk, LastIn, LastHello, LastLanTry, Offset; public int Fails;
  public bool PeerText = true, PeerFiles = true, PeerPaused;
  public readonly List<string> Pending = new List<string>();
  public readonly HashSet<string> InFlight = new HashSet<string>();
@@ -108,7 +109,7 @@ sealed partial class Hub {
  // ───────────── 发出的请求 ─────────────
 
  HttpWebRequest Signed(string baseUrl, string method, string pq, int timeout) {
-  var r = Client.Make(baseUrl + pq, method, timeout);
+  var r = app.Relay.IsMine(baseUrl) ? Relay.Make(baseUrl + pq, method, timeout) : Client.Make(baseUrl + pq, method, timeout);
   string ts = Util.Ms().ToString(), nonce = Crypto.Token(8);
   r.Headers["X-LB-Id"] = C.deviceId; r.Headers["X-LB-Ts"] = ts; r.Headers["X-LB-Nonce"] = nonce;
   r.Headers["X-LB-Port"] = app.Opt.Port.ToString();
@@ -127,9 +128,31 @@ sealed partial class Hub {
 
  public object MyInfo() => new {
   lb = 2, id = C.deviceId, name = C.deviceName, port = app.Opt.Port, form = Shell.Form, ver = Program.Version, time = Util.Ms(),
-  addrs = app.Opt.Loopback ? new[] { "127.0.0.1" } : Util.LocalAddrs().Select(a => a.Ip.ToString()).Take(6).ToArray(),
-  syncText = C.syncText, syncFiles = C.syncFiles, paused = C.paused
+  addrs = app.Opt.NoLan ? new string[0] : app.Opt.Loopback ? new[] { "127.0.0.1" } : Util.LocalAddrs().Select(a => a.Ip.ToString()).Take(6).ToArray(),
+  syncText = C.syncText, syncFiles = C.syncFiles, paused = C.paused, relay = C.relay, relayAt = C.relayAt
  };
+
+ /// <summary>改了中转地址：经各条现有的路（可能是旧中转）把新地址告诉组里的电脑。</summary>
+ public void AnnounceRelay() {
+  var info = MyInfo();
+  var tasks = Links().Where(l => l.Url != null).Select(l => Task.Run(() => { try { Call(l.Url, "POST", "/lb/hello", info, 8000); } catch { } })).ToArray();
+  try { Task.WaitAll(tasks, 9000); } catch { }
+ }
+
+ /// <summary>中转地址在组内同步：谁最后改的听谁的。</summary>
+ public void AdoptRelay(Dictionary<string, object> d) {
+  long at = d.Num("relayAt");
+  if (at <= 0 || !d.ContainsKey("relay")) return;
+  bool changed;
+  lock (Gate) {
+   changed = at > C.relayAt;
+   if (changed) { var v = d["relay"] as string; C.relay = v == null ? null : Util.Clip(v.Trim(), 300); C.relayAt = at; }
+  }
+  if (!changed) return;
+  // 组里别的电脑换了中转：这台的临时中转就用不上了，关掉。
+  if (C.relayTemp && C.relay != app.Temp.Url) { lock (Gate) C.relayTemp = false; app.Temp.Stop(); }
+  app.Save(); app.Relay.Kick(); app.Changes.Bump();
+ }
 
  void ApplyInfo(Link l, Dictionary<string, object> d, string ip) {
   var m = l.M;
@@ -140,6 +163,7 @@ sealed partial class Hub {
   if (ip != null) AddAddr(m, ip, port); else if (port > 0) m.port = port;
   while (m.addrs.Count > 6) m.addrs.RemoveAt(m.addrs.Count - 1);
   m.seen = Util.Ms();
+  if (d.Num("relayAt") > C.relayAt) Util.Thread("relay-adopt", () => AdoptRelay(d));
   if (d.Flag("syncText") is bool t) l.PeerText = t;
   if (d.Flag("syncFiles") is bool f) l.PeerFiles = f;
   if (d.Flag("paused") is bool p) l.PeerPaused = p;
@@ -159,26 +183,37 @@ sealed partial class Hub {
   }
  }
 
+ /// <summary>
+ /// 和对方打招呼，顺便找一条能通的路：先试局域网地址（先用很短的 TCP 连接筛一遍），都不通再走中转。
+ /// 已经走中转时每分钟再看一次局域网，回到同一个网络就自动换回直连。
+ /// </summary>
  void Hello(Link l) {
-  l.LastHello = Util.Ms();
-  string before = l.State;
-  List<string> urls;
+  long now = Util.Ms(); l.LastHello = now;
+  string before = l.State, relay = app.Relay.PeerUrl(l.Id);
+  var lan = new List<string>();
   lock (Gate) {
-   urls = new List<string>();
-   if (l.Url != null) urls.Add(l.Url);
-   foreach (var a in l.M.addrs) { string u = "http://" + a + ":" + l.M.port; if (!urls.Contains(u)) urls.Add(u); }
+   if (l.Url != null && !l.ViaRelay) lan.Add(l.Url);
+   foreach (var a in l.M.addrs) { string u = "http://" + a + ":" + l.M.port; if (!lan.Contains(u)) lan.Add(u); }
+  }
+  if (app.Opt.NoLan) lan.Clear();
+  var tries = new List<(string url, bool via)>();
+  if (relay == null) tries.AddRange(lan.Take(7).Select(u => (u, false)));
+  else {
+   bool onRelay = l.PushOk && l.ViaRelay;
+   if (!onRelay || now - l.LastLanTry > 60000) { l.LastLanTry = now; tries.AddRange(Reachable(lan.Take(7).ToList(), 900).Select(u => (u, false))); }
+   tries.Add((relay, true));
   }
   string lastError = null;
-  foreach (var url in urls.Take(7)) {
+  foreach (var (url, via) in tries) {
    try {
     long t0 = Util.Ms();
-    var d = Call(url, "POST", "/lb/hello", MyInfo(), urls.Count > 2 ? 1500 : 2500);
+    var d = Call(url, "POST", "/lb/hello", MyInfo(), via ? 12000 : tries.Count > 2 ? 1500 : 2500);
     long t1 = Util.Ms();
     if (d.Get("id") != l.Id) continue;
     lock (Gate) {
-     l.Url = url; l.PushOk = true; l.LastOk = t1; l.Fails = 0; l.Error = null;
+     l.Url = url; l.ViaRelay = via; l.PushOk = true; l.LastOk = t1; l.Fails = 0; l.Error = null;
      l.Offset = d.Num("time") - (t0 + t1) / 2;
-     ApplyInfo(l, d, new Uri(url).Host);
+     ApplyInfo(l, d, via ? null : new Uri(url).Host);
     }
     if (before != l.State) { app.Changes.Bump(); l.WaitSignal.Set(); }
     return;
@@ -189,6 +224,14 @@ sealed partial class Hub {
   if (before != l.State) app.Changes.Bump();
  }
 
+ /// <summary>并行试 TCP 连接，留下能连上的（保持原来的顺序）。另一个网络里的私有地址一般连不上，不用每个都等 HTTP 超时。</summary>
+ static List<string> Reachable(List<string> urls, int ms) {
+  if (urls.Count == 0) return urls;
+  var tasks = urls.Select(u => Task.Run(() => { var x = new Uri(u); return Client.CanConnect(x.Host, x.Port, ms); })).ToArray();
+  try { Task.WaitAll(tasks, ms + 600); } catch { }
+  return urls.Where((u, i) => tasks[i].Status == TaskStatus.RanToCompletion && tasks[i].Result).ToList();
+ }
+
  void Push(Link l, string id) {
   OutEvent oe;
   lock (Gate) {
@@ -196,7 +239,8 @@ sealed partial class Hub {
    l.InFlight.Add(id);
   }
   try {
-   var r = Call(l.Url, "POST", "/lb/offer", new { ev = oe.Ev }, 10000);
+   if (l.ViaRelay && oe.Ev.items.Any(x => Keys.SealedLength(x.size) > app.Relay.MaxBody)) throw new ApiError(413, "经中转一次最多传 " + (app.Relay.MaxBody >> 20) + " MB，大文件请在同一个网络里传");
+   var r = Call(l.Url, "POST", "/lb/offer", new { ev = oe.Ev }, l.ViaRelay ? 20000 : 10000);
    if (r.Flag("done") == true) { Delivered(l, oe, r.Get("skipped")); return; }
    if (r.Flag("busy") == true) { lock (Gate) l.Hold[id] = Util.Ms() + 20000; return; }
    long before = 0;
@@ -205,7 +249,7 @@ sealed partial class Hub {
     if (need.Contains(i)) Upload(l, oe, i, before);
     before += oe.Ev.items[i].size;
    }
-   var c = Call(l.Url, "POST", "/lb/commit", new { id }, 20000);
+   var c = Call(l.Url, "POST", "/lb/commit", new { id }, l.ViaRelay ? 40000 : 20000);
    if (c.Flag("done") == true) Delivered(l, oe, null);
   } catch (ApiError e) when (e.Status >= 400 && e.Status < 500 && e.Status != 401 && e.Status != 409) {
    Failed(l, oe, e.Message);
@@ -423,14 +467,14 @@ sealed partial class Hub {
   var l = EnsureLink(id, null) ?? throw new ApiError(403, "这台电脑已被移出设备组");
   lock (Gate) {
    l.LastIn = Util.Ms(); l.M.seen = l.LastIn;
-   if (int.TryParse(q.H("X-LB-Port"), out int port) && Util.IsPrivate(q.Remote) && !IPAddress.IsLoopback(q.Remote) || app.Opt.Loopback) AddAddr(l.M, q.Remote.ToString(), port);
+   if (q.Via == null && !app.Opt.NoLan && int.TryParse(q.H("X-LB-Port"), out int port) && (Util.IsPrivate(q.Remote) && !IPAddress.IsLoopback(q.Remote) || app.Opt.Loopback)) AddAddr(l.M, q.Remote.ToString(), port);
   }
   return l;
  }
 
  public object HelloIn(Link l, Dictionary<string, object> d, Req q) {
   string before = l.State;
-  lock (Gate) ApplyInfo(l, d, Util.IsPrivate(q.Remote) ? q.Remote.ToString() : null);
+  lock (Gate) ApplyInfo(l, d, q.Via == null && !app.Opt.NoLan && Util.IsPrivate(q.Remote) ? q.Remote.ToString() : null);
   // 对方能连到我，我却没连上它：立刻反过来试一次。
   if (!l.PushOk) l.Signal.Set();
   if (before != l.State) app.Changes.Bump();
@@ -510,18 +554,22 @@ sealed partial class Hub {
 
  // ───────────── 本机产生的内容 ─────────────
 
+ /// <summary>经中转时自动同步的上限（复制的图片、文件）；更大的要主动发。</summary>
+ const long RelayAutoLimit = 20L << 20;
+
  /// <summary>本机复制了东西（或手机发来的东西写进了本机剪贴板）。</summary>
  public void LocalCopy(string kind, string text, string[] paths, string via = null) {
   var ev = new SyncEvent { id = Crypto.Token(12), origin = C.deviceId, originName = C.deviceName, kind = kind, text = kind == "text" ? text : null, stamp = Util.Ms(), via = via };
   if (paths != null) foreach (var p in paths) ev.items.Add(new Item { name = Path.GetFileName(p), size = new FileInfo(p).Length });
   long total = ev.TotalSize();
   bool tooBig = kind != "text" && total > (long)C.autoLimitMB * 1024 * 1024;
-  List<Link> targets;
+  List<Link> targets; int relaySkipped;
   lock (Gate) {
    if (kind == "text" && Latest?.kind == "text" && Latest.text == text && Util.Ms() - lastLocalCopy < 1500) return;
    lastLocalCopy = ev.stamp; Latest = ev; LatestPaths = paths;
    // 剪贴板只发给此刻在线的电脑；不在线的等它上线后不补发旧内容（避免突然覆盖它的剪贴板）。
    targets = C.paused || tooBig ? new List<Link>() : links.Values.Where(l => kind == "text" ? C.syncText && l.PeerText : C.syncFiles && l.PeerFiles).Where(l => !l.PeerPaused && l.State != "offline").ToList();
+   relaySkipped = kind != "text" && total > RelayAutoLimit ? targets.RemoveAll(l => l.ViaRelay) : 0;
    var oe = new OutEvent { Ev = ev, Paths = paths ?? new string[0], Created = ev.stamp };
    foreach (var l in targets) { oe.Targets.Add(l.Id); l.Pending.Add(ev.id); }
    outs[ev.id] = oe;
@@ -529,12 +577,14 @@ sealed partial class Hub {
   }
   foreach (var l in targets) l.Signal.Set();
   app.Phones.ClipChanged();
-  if (targets.Count > 0 || via != null || tooBig) {
+  if (targets.Count > 0 || via != null || tooBig || relaySkipped > 0) {
    app.Feed.Add(new FeedItem {
     id = ev.id, kind = kind, dir = "out", from = via ?? C.deviceName, to = targets.Select(l => l.M.name).ToList(),
     text = text, image = kind == "image", clip = true, status = targets.Count > 0 ? "sending" : "local", total = total * Math.Max(1, targets.Count),
     files = (paths ?? new string[0]).Select(p => new FeedFile { name = Path.GetFileName(p), path = p, size = new FileInfo(p).Length }).ToList(),
-    note = tooBig ? "超过 " + C.autoLimitMB + " MB，没有自动同步。可以拖到设备上发送" : targets.Count == 0 && via != null ? "已放进本机剪贴板" : null
+    note = tooBig ? "超过 " + C.autoLimitMB + " MB，没有自动同步。可以拖到设备上发送"
+     : relaySkipped > 0 ? "不在同一个网络的电脑超过 " + (RelayAutoLimit >> 20) + " MB 不自动同步，可以拖到设备上发送"
+     : targets.Count == 0 && via != null ? "已放进本机剪贴板" : null
    });
   }
  }

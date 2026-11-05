@@ -22,7 +22,7 @@ sealed class Router {
  public void Handle(Req q, Res res) {
   string p = q.Path;
   if (p.StartsWith("/lb/")) { Peer(q, res); return; }
-  CheckHost(q);
+  if (q.Via != null) CheckRelayed(q); else CheckHost(q);
   if (p.StartsWith("/api/local/")) { Local(q, res); return; }
   if (p.StartsWith("/api/test/")) { Test(q, res); return; }
   if (p.StartsWith("/api/phone/") || p == "/v1/sync" || p == "/v1/ack" || p == "/v1/swap") { PhoneApi(q, res); return; }
@@ -39,6 +39,13 @@ sealed class Router {
   if (!ok) throw new ApiError(403, "地址不对");
   string origin = q.H("Origin");
   if (origin.Length > 0 && origin != "null" && !origin.Equals("http://" + q.Host, StringComparison.OrdinalIgnoreCase)) throw new ApiError(403, "不接受其他网页发来的请求");
+  if (q.H("Sec-Fetch-Site") == "cross-site") throw new ApiError(403, "不接受跨站请求");
+ }
+
+ /// <summary>经中转来的手机请求：Host 是中转的；只接受中转自己域名下的网页发来的请求。</summary>
+ void CheckRelayed(Req q) {
+  string origin = q.H("Origin");
+  if (origin.Length > 0 && origin != "null" && !origin.Equals(app.Relay.Origin, StringComparison.OrdinalIgnoreCase)) throw new ApiError(403, "不接受其他网页发来的请求");
   if (q.H("Sec-Fetch-Site") == "cross-site") throw new ApiError(403, "不接受跨站请求");
  }
 
@@ -73,6 +80,10 @@ sealed class Router {
  // ───────────── 手机 ─────────────
 
  void PhoneApi(Req q, Res res) {
+  try { PhoneApiInner(q, res); }
+  catch (ApiError e) { if (e.Status != 401 || q.Path != "/api/phone/state") Log.Write("手机请求没成功 " + q.Method + " " + q.Path + "（" + e.Status + "）：" + e.Message); throw; }
+ }
+ void PhoneApiInner(Req q, Res res) {
   var ph = app.Phones; string p = q.Path;
   if (p == "/api/phone/pair" && q.Method == "POST") { res.Json(ph.PairIn(q.Json(16 * 1024))); return; }
   if (p == "/api/phone/join" && q.Method == "POST") { res.Json(ph.JoinIn(q.Json(16 * 1024), q)); return; }
@@ -80,6 +91,7 @@ sealed class Router {
   var phone = ph.Auth(q);
   switch (p) {
    case "/api/phone/state": res.Json(ph.State(phone, long.TryParse(q.Q("rev"), out var r) ? r : 0)); return;
+   case "/api/phone/cloud": res.Json(app.Cloud.List()); return;
    case "/api/phone/text" when q.Method == "POST": res.Json(ph.TextIn(phone, q.Json())); return;
    case "/api/phone/upload" when q.Method == "POST": res.Json(ph.UploadIn(phone, q)); return;
    case "/api/phone/file": ph.Download(phone, q, res); return;
@@ -118,9 +130,18 @@ sealed class Router {
     }
     case "qr": {
      string ip = q.Q("ip"); if (ip.Length == 0) ip = Util.PrimaryIp();
-     res.Bytes(Encoding.UTF8.GetBytes(Qr.Svg(PairUrl(ip))), "image/svg+xml"); return;
+     string url = q.Q("mode") == "relay" && app.Relay.PhoneUrl != null ? app.Relay.PhoneUrl + "#p=" + app.Phones.PairSecret : PairUrl(ip);
+     res.Bytes(Encoding.UTF8.GetBytes(Qr.Svg(url)), "image/svg+xml"); return;
     }
     case "thumb": Thumb(q, res); return;
+    case "cloud": res.Json(app.Cloud.List()); return;
+    case "phone-history": res.Json(app.History.Query(q.Q("q"), q.Q("phone"), long.TryParse(q.Q("before"), out var bf) ? bf : 0, int.TryParse(q.Q("limit"), out var lm) ? Math.Max(1, Math.Min(200, lm)) : 60)); return;
+    case "hthumb": {
+     var h = app.History.Find(q.Q("id")); var f = h?.files.FirstOrDefault();
+     if (f?.path == null || !File.Exists(f.path)) throw new ApiError(404, "没有图片");
+     if (new FileInfo(f.path).Length > 64 * 1024 * 1024) throw new ApiError(413, "图片太大");
+     res.Bytes(File.ReadAllBytes(f.path), PhoneHub.MimeOf(f.path)); return;
+    }
    }
    throw new ApiError(404, "没有这个接口");
   }
@@ -131,6 +152,8 @@ sealed class Router {
    case "settings": Settings(d); break;
    case "connect": app.Hub.Connect(d.Get("id")); break;
    case "connect-address": app.Hub.ConnectAddress(d.Get("address")); break;
+   case "connect-code": app.Hub.ConnectCode(d.Get("code")); break;
+   case "remote-code": result = new { code = app.Relay.NewCode() }; break;
    case "cancel-connect": app.Hub.CancelConnect(d.Get("id")); break;
    case "answer": app.Hub.Answer(d.Get("id"), d.Flag("allow") == true); break;
    case "remove": app.Hub.Remove(d.Get("id")); break;
@@ -145,6 +168,11 @@ sealed class Router {
    case "retry": app.Hub.Retry(d.Get("id")); break;
    case "feed-remove": app.Feed.Remove(d.Get("id")); break;
    case "feed-clear": app.Feed.Clear(); break;
+   case "history-copy": HistoryCopy(d.Get("id")); break;
+   case "cloud-download": app.Cloud.Download(d.Get("id")); break;
+   case "cloud-delete": app.Cloud.Delete(d.Get("id")); break;
+   case "history-remove": app.History.Remove(d.Get("id")); break;
+   case "history-clear": app.History.Clear(d.Get("phone")); break;
    case "pair-refresh": app.Phones.RefreshPair(); break;
    case "scan": app.Discovery.Rescan(); break;
    case "native": result = Native(d); break;
@@ -155,7 +183,7 @@ sealed class Router {
  }
 
  void Settings(Dictionary<string, object> d) {
-  bool shell = false;
+  bool shell = false, relayChanged = false, tempOn = false, tempOff = false;
   lock (app.Gate) {
    if (d.ContainsKey("name")) { var n = Util.Clip(d.Get("name").Trim(), 40); if (n.Length > 0) C.deviceName = n; }
    if (d.Flag("syncText") is bool a) C.syncText = a;
@@ -165,11 +193,30 @@ sealed class Router {
    if (d.Flag("autostart") is bool f) { C.autostart = f; shell = true; }
    if (d.Flag("sendTo") is bool g) { C.sendTo = g; shell = true; }
    if (d.ContainsKey("autoLimitMB")) C.autoLimitMB = (int)Math.Max(1, Math.Min(4096, d.Num("autoLimitMB", 200)));
+   if (d.Flag("relayTemp") == true) {
+    // 临时中转：先开隧道，拿到地址后再写进 relay（TempRelay.Publish）。
+    tempOn = true; C.relayTemp = true;
+   } else if (d.Flag("relayEnable") == true) {
+    if (string.IsNullOrEmpty(app.Relay.Builtin)) throw new ApiError(503, "常驻中转服务器还没上线，可以先用临时中转，或在下面填自己的中转地址");
+    if (C.relayTemp) { C.relayTemp = false; tempOff = true; }
+    relayChanged = C.relay != app.Relay.Builtin; C.relay = app.Relay.Builtin; C.relayAt = Util.Ms();
+   } else if (d.ContainsKey("relay")) {
+    string v = (d["relay"] as string ?? "").Trim().TrimEnd('/');
+    if (v.Length > 0 && !v.Contains("://")) v = "https://" + v;
+    if (v.Length > 0 && (!Uri.TryCreate(v, UriKind.Absolute, out var u) || (u.Scheme != "https" && u.Scheme != "http") || v.Length > 300)) throw new ApiError(400, "中转地址不对，例如 https://relay.example.com");
+    string next = v.Length == 0 ? null : v;
+    if (C.relayTemp) { C.relayTemp = false; tempOff = true; }
+    relayChanged = next != C.relay; C.relay = next; C.relayAt = Util.Ms();
+   }
   }
   app.Save();
+  if (tempOff) app.Temp.Stop();
+  if (tempOn) app.Temp.Start();
   if (shell && !app.Opt.NoShell) { Shell.SetAutostart(C.autostart); Shell.SetSendTo(C.sendTo); }
   // 设置变了马上告诉其他电脑（名字、是否接收）。
-  foreach (var l in app.Hub.Links()) { l.LastHello = 0; l.Signal.Set(); }
+  // 换中转地址时先经原来的路告诉它们，再换：不然不在同一个网络的电脑会互相找不到。
+  if (relayChanged) Util.Thread("relay-announce", () => { app.Hub.AnnounceRelay(); app.Relay.Kick(); foreach (var l in app.Hub.Links()) { l.LastHello = 0; l.Signal.Set(); } });
+  else foreach (var l in app.Hub.Links()) { l.LastHello = 0; l.Signal.Set(); }
   app.Changes.Bump();
  }
 
@@ -199,12 +246,31 @@ sealed class Router {
     if (cmd == "open") Shell.Open(file.path); else Shell.Reveal(file.path);
     break;
    }
+   case "hopen": case "hreveal": {
+    var h = app.History.Find(d.Get("id")); var file = h?.files.ElementAtOrDefault((int)d.Num("i"));
+    if (file?.path == null || !File.Exists(file.path)) throw new ApiError(404, "文件已被移动或删除");
+    if (cmd == "hopen") Shell.Open(file.path); else Shell.Reveal(file.path);
+    break;
+   }
    case "firewall": return new { ok = Shell.AllowFirewall() };
    case "browser": System.Diagnostics.Process.Start(app.DeskUrl); break;
    case "exit": app.Ui(app.Exit); break;
    default: throw new ApiError(400, "不认识的操作");
   }
   return new { ok = true };
+ }
+
+ /// <summary>把历史里的一条重新放进剪贴板（也同步给其他电脑）。</summary>
+ void HistoryCopy(string id) {
+  var h = app.History.Find(id) ?? throw new ApiError(404, "这条已经删掉了");
+  bool ok;
+  if (h.kind == "text") ok = app.Clip.WriteText(h.text ?? "", true);
+  else {
+   var paths = h.files.Where(f => f.path != null && File.Exists(f.path)).Select(f => f.path).ToArray();
+   if (paths.Length == 0) throw new ApiError(404, "文件已被移动或删除");
+   ok = h.kind == "image" && paths.Length == 1 ? app.Clip.WriteImage(paths[0], true) : app.Clip.WriteFiles(paths, true);
+  }
+  if (!ok) throw new ApiError(409, "剪贴板正被别的程序占用，请再试一次");
  }
 
  /// <summary>在普通浏览器里打开电脑界面时（没有 WebView2），拖进来的文件先上传到本机再发。</summary>
@@ -232,7 +298,7 @@ sealed class Router {
   lock (app.Gate) {
    var devices = app.Hub.Links().Select(l => new {
     id = l.Id, kind = "pc", name = l.M.name, form = l.M.form ?? "desktop", state = l.State, error = l.Error,
-    addr = l.Url != null ? new Uri(l.Url).Host : l.M.addrs.FirstOrDefault(), seen = l.M.seen, pending = l.Pending.Count,
+    addr = l.ViaRelay ? null : l.Url != null ? new Uri(l.Url).Host : l.M.addrs.FirstOrDefault(), route = l.ViaRelay && l.State != "offline" ? "relay" : "lan", seen = l.M.seen, pending = l.Pending.Count,
     text = l.PeerText, files = l.PeerFiles, paused = l.PeerPaused
    }).OrderBy(x => x.state == "offline" ? 1 : 0).ThenBy(x => x.name).ToList();
    var phones = C.phones.Select(p => new { id = "phone:" + p.id, kind = "phone", name = p.name, form = "phone", state = now - p.seen < 40000 ? "online" : "offline", seen = p.seen }).ToList();
@@ -240,6 +306,9 @@ sealed class Router {
     rev = app.Changes.Rev, version = Program.Version,
     me = new { id = C.deviceId, name = C.deviceName, form = Shell.Form, port = app.Opt.Port, ip = addrs.FirstOrDefault()?.Ip.ToString() ?? "127.0.0.1", mdns = app.MdnsName, addrs = addrs.Select(a => new { ip = a.Ip.ToString(), name = a.Name, good = a.Score >= 0 }).ToList() },
     settings = new { C.syncText, C.syncFiles, C.notify, C.paused, C.autostart, C.sendTo, C.receiveFolder, C.autoLimitMB, noShell = app.Opt.NoShell },
+    relay = new { url = app.Relay.Base, builtIn = app.Relay.Builtin, custom = !C.relayTemp && C.relay != null && C.relay != app.Relay.Builtin, state = app.Relay.State, error = app.Relay.Error, code = app.Relay.CodeActive ? app.Relay.Code : null, codeText = app.Relay.CodeText, codeUntil = app.Relay.CodeUntil, maxMB = app.Relay.MaxBody >> 20,
+     mode = C.relayTemp ? "temp" : C.relay == null ? "off" : C.relay == app.Relay.Builtin ? "builtin" : "custom",
+     temp = new { on = C.relayTemp, state = app.Temp.State, error = app.Temp.Error, url = app.Temp.Url, progress = app.Temp.Progress, tool = app.Temp.ToolReady, since = app.Temp.Since } },
     devices, phones,
     nearby = app.Hub.Near.Values.OrderBy(n => n.name).Select(n => new { n.id, n.name, form = n.form ?? "desktop", n.ip, n.port, n.state, n.code, n.error }).ToList(),
     requests = app.Hub.Requests.Where(r => r.status == "pending" && r.until > now).Select(r => new { r.id, r.kind, r.name, form = r.form ?? (r.kind == "phone" ? "phone" : "desktop"), r.code, r.ip, left = (r.until - now) / 1000 }).ToList(),
@@ -247,10 +316,11 @@ sealed class Router {
      f.id, f.kind, f.dir, f.from, f.to, text = Util.Clip(f.text, 800), chars = f.text?.Length ?? 0, f.time, f.status, f.note, f.total, f.done, f.image, f.clip,
      files = f.files.Take(12).Select(x => new { x.name, x.size, exists = x.path != null && File.Exists(x.path) }).ToList(), more = Math.Max(0, f.files.Count - 12)
     }).ToList(),
-    pair = new { url = PairUrl(addrs.FirstOrDefault()?.Ip.ToString() ?? "127.0.0.1"), until = app.Phones.PairUntil },
+    pair = new { url = PairUrl(addrs.FirstOrDefault()?.Ip.ToString() ?? "127.0.0.1"), relayUrl = app.Relay.Ready ? app.Relay.PhoneUrl : null, until = app.Phones.PairUntil },
     pending = app.PendingSend == null ? null : new { count = app.PendingSend.Length, names = app.PendingSend.Take(3).Select(Path.GetFileName).ToList() },
     scanning = app.Discovery.Scanning, lastScan = app.Discovery.LastScan, hop = app.Discovery.Hop,
-    welcomed = C.welcomed, fake = app.Clip.Fake
+    welcomed = C.welcomed, fake = app.Clip.Fake, history = new { count = app.History.Count, rev = app.History.Rev },
+    cloud = new { ready = app.Cloud.Ready, rev = app.Cloud.Rev, poolMB = app.Relay.PoolMB }
    };
   }
  }
@@ -267,6 +337,7 @@ sealed class Router {
     app.Hub.LocalCopy(kind, kind == "text" ? d.Get("text") : null, kind == "text" ? null : paths);
     res.Json(new { ok = true }); return;
    }
+   case "/api/test/tunnel-rotate": app.Temp.Rotate(); res.Json(new { ok = true }); return;
    case "/api/test/clip": res.Json(new { kind = app.Clip.FakeKind, text = app.Clip.FakeText, paths = app.Clip.FakePaths }); return;
    case "/api/test/info": res.Json(new { id = C.deviceId, tag = app.Hub.Tag, pair = app.Phones.PairSecret, root = app.Root, receive = C.receiveFolder }); return;
   }

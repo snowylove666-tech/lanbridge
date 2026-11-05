@@ -11,7 +11,10 @@ namespace LanBridge;
 
 public sealed class Options {
  public string Data, Name; public int Port = 49321; public string[] Send;
- public bool Background, Loopback, FakeClipboard, Headless, NoShell, Dev;
+ public bool Background, Loopback, FakeClipboard, Headless, NoShell, Dev, NoLan, FakeTunnel;
+ public string Relay, RelayDefault;
+ /// <summary>临时中转单次上限（Cloudflare 免费版一次最多 100 MB）；--relay-host 测试用的独立中转端口。</summary>
+ public long RelayMaxMB = 95; public int RelayHost;
  public List<string> Scan = new List<string>();
  public static Options Parse(string[] a) {
   var o = new Options();
@@ -27,6 +30,12 @@ public sealed class Options {
     case "--headless": o.Headless = true; o.Background = true; break;
     case "--no-shell": o.NoShell = true; break;
     case "--dev": o.Dev = true; break;
+    case "--relay" when i + 1 < a.Length: o.Relay = a[++i]; break;
+    case "--no-lan": o.NoLan = true; break;
+    case "--builtin-relay" when i + 1 < a.Length: o.RelayDefault = a[++i]; break;
+    case "--fake-tunnel": o.FakeTunnel = true; break;
+    case "--relay-max-mb" when i + 1 < a.Length: o.RelayMaxMB = long.Parse(a[++i]); break;
+    case "--relay-host" when i + 1 < a.Length: o.RelayHost = int.Parse(a[++i]); break;
     case "--send": o.Send = a.Skip(i + 1).ToArray(); i = a.Length; break;
    }
   }
@@ -43,8 +52,8 @@ sealed class App : ApplicationContext {
  public readonly object Gate = new object();
  public readonly string Root, LocalToken = Crypto.Token(16), MdnsName;
  public readonly Changes Changes = new Changes();
- public readonly Feed Feed; public readonly Hub Hub; public readonly PhoneHub Phones; public readonly ClipService Clip; public readonly Discovery Discovery;
- readonly HttpServer server; readonly Mdns mdns; readonly CommandPipe pipe; readonly Tray tray; readonly Control invoker;
+ public readonly Feed Feed; public readonly Hub Hub; public readonly PhoneHub Phones; public readonly ClipService Clip; public readonly Discovery Discovery; public readonly Relay Relay; public readonly TempRelay Temp; public readonly Cloud Cloud; public readonly PhoneHistory History;
+ readonly HttpServer server; readonly Mdns mdns; RelayServer testRelay; readonly CommandPipe pipe; readonly Tray tray; readonly Control invoker;
  MainWindow window;
  public Icon AppIcon;
  public string[] PendingSend; public long PendingSendAt;
@@ -61,10 +70,12 @@ sealed class App : ApplicationContext {
   try { var b = Embedded.Resource("app.ico"); AppIcon = b == null ? SystemIcons.Application : new Icon(new MemoryStream(b)); } catch { AppIcon = SystemIcons.Application; }
   ThreadPool.SetMinThreads(64, 32);
 
-  Feed = new Feed(this); Clip = new ClipService(this); Hub = new Hub(this); Phones = new PhoneHub(this); Discovery = new Discovery(this);
-  server = new HttpServer(o.Loopback ? IPAddress.Loopback : IPAddress.Any, o.Port, new Router(this).Handle);
+  Feed = new Feed(this); History = new PhoneHistory(this); Clip = new ClipService(this); Hub = new Hub(this); Phones = new PhoneHub(this); Discovery = new Discovery(this); Relay = new Relay(this); Temp = new TempRelay(this); Cloud = new Cloud(this);
+  var router = new Router(this);
+  server = new HttpServer(o.Loopback ? IPAddress.Loopback : IPAddress.Any, o.Port, router.Handle);
   server.Start();
-  Clip.Start(); Hub.Start(); Discovery.Start();
+  Clip.Start(); Hub.Start(); if (!o.NoLan) Discovery.Start(); Relay.Start(router.Handle); Temp.Resume();
+  if (o.RelayHost > 0) testRelay = new RelayServer(o.RelayHost, o.RelayMaxMB << 20);
   if (!o.Loopback) { mdns = new Mdns(MdnsName); mdns.Start(); }
   pipe = new CommandPipe(o.Port, (cmd, files) => Ui(() => OnCommand(cmd, files)));
   try { File.WriteAllText(Path.Combine(Root, "desk-url.txt"), DeskUrl); } catch { }
@@ -113,7 +124,8 @@ sealed class App : ApplicationContext {
 
  public void SendTo(string target, string[] paths) {
   if (paths == null || paths.Length == 0) throw new ApiError(400, "没有选文件");
-  if (target.StartsWith("phone:")) Phones.Offer(target.Substring(6), paths);
+  if (target == "cloud") Cloud.Upload(paths);
+  else if (target.StartsWith("phone:")) Phones.Offer(target.Substring(6), paths);
   else Hub.SendFiles(target, paths);
  }
 
@@ -133,6 +145,9 @@ sealed class App : ApplicationContext {
  public void Shutdown() {
   exiting = true;
   try { Discovery.Stop(); } catch { }
+  try { Relay.Stop(); } catch { }
+  try { Temp.Shutdown(); } catch { }
+  try { testRelay?.Dispose(); } catch { }
   try { Hub.Stop(); } catch { }
   try { server.Dispose(); } catch { }
   try { mdns?.Dispose(); } catch { }

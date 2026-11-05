@@ -1,0 +1,2 @@
+*.sh text eol=lf
+relay/*.mjs text eol=lf

@@ -16,6 +16,10 @@ public sealed class Member {
 public sealed class Phone {
  public string id, name, hash; public long added, seen;
  public bool init; public string baseline, lastClip;
+ /// <summary>快捷指令最后一次发来的图片：同一张图再来（比如切 App 自动运行）就不重复发。</summary>
+ public string imageHash;
+ /// <summary>上一次快捷指令带来的手机剪贴板（哈希）和时间：用来判断手机这次是不是“刚复制的”。</summary>
+ public string lastReport; public long lastReportAt;
 }
 
 public sealed class Config {
@@ -24,6 +28,10 @@ public sealed class Config {
  public bool syncText = true, syncFiles = true, notify = true, paused = false, autostart = true, sendTo = true;
  public bool shellApplied, welcomed;
  public int autoLimitMB = 200;
+ /// <summary>中转地址：null 用内置的，"" 表示关掉。relayAt 是改动时间，组内以最新的为准。</summary>
+ public string relay, relayKey; public long relayAt;
+ /// <summary>这台电脑开着临时中转（自己当中转 + Cloudflare 临时隧道）。</summary>
+ public bool relayTemp;
  public string receiveFolder;
  public List<Member> members = new List<Member>();
  public List<string> blocked = new List<string>();
@@ -57,6 +65,8 @@ sealed class Store {
   if (string.IsNullOrEmpty(C.familyKey)) NewFamily();
   if (string.IsNullOrEmpty(C.receiveFolder)) C.receiveFolder = o.Data != null ? Path.Combine(root, "收到的文件") : Shell.DefaultReceiveFolder();
   if (C.autoLimitMB < 1) C.autoLimitMB = 200;
+  if (string.IsNullOrEmpty(C.relayKey)) C.relayKey = Crypto.Token(16);
+  if (o.Relay != null && C.relay == null) { C.relay = o.Relay; C.relayAt = 1; }
   Save();
  }
 

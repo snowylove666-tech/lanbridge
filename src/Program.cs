@@ -6,12 +6,14 @@ using System.Windows.Forms;
 namespace LanBridge;
 
 static class Program {
- public const string Version = "2.0.0";
+ public const string Version = "2.2.0";
 
  [STAThread]
  static int Main(string[] args) {
   Embedded.Hook();
   if (args.Length == 2 && args[0] == "--make-icon") { Brand.WriteIco(args[1]); return 0; }
+  // 服务器上只当常驻中转 + 小云文件池。
+  if (Array.IndexOf(args, "--relay-server") >= 0) return RelayHost.Run(args);
   var o = Options.Parse(args);
   using var mutex = new Mutex(false, "Local\\LanBridge2-" + o.Port);
   bool owned; try { owned = mutex.WaitOne(0); } catch (AbandonedMutexException) { owned = true; }

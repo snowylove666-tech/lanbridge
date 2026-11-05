@@ -34,9 +34,7 @@ sealed class MainWindow : Form {
   HandleCreated += (s, e) => Shell.TitleBar(Handle, dark, BackColor);
   Load += async (s, e) => {
    try {
-    CoreWebView2Environment.SetLoaderDllFolderPath(Embedded.LoaderFolder(app.Root));
-    var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(app.Root, "webview"), new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection,msEdgeTranslate" });
-    await web.EnsureCoreWebView2Async(env);
+    await web.EnsureCoreWebView2Async(await Env(app));
     var w = web.CoreWebView2;
     w.Settings.IsStatusBarEnabled = false; w.Settings.IsZoomControlEnabled = false;
     w.Settings.AreDevToolsEnabled = app.Opt.Dev; w.Settings.AreBrowserAcceleratorKeysEnabled = app.Opt.Dev;
@@ -48,13 +46,27 @@ sealed class MainWindow : Form {
     w.WebMessageReceived += OnMessage;
     w.Navigate(app.DeskUrl);
    } catch (Exception ex) {
-    // 没有 WebView2 运行时（极少见，老 Win10）：用浏览器打开同一个界面。
-    Log.Write("WebView2 不可用：" + ex.Message);
+    // 界面组件起不来（极少见：老 Win10 没装 WebView2 运行时）。不自动跳到浏览器，问一下再说。
+    Log.Write("WebView2 不可用：" + ex);
+    envTask = null;
     app.WebViewFailed = true;
-    try { System.Diagnostics.Process.Start(app.DeskUrl); } catch { }
-    BeginInvoke((Action)Close);
+    BeginInvoke((Action)(() => {
+     Hide();
+     var r = MessageBox.Show("轻桥的窗口没能打开（缺少 Microsoft Edge WebView2 运行时）。\n\n同步在后台照常进行。要先在浏览器里打开设置界面吗？\n\n安装 WebView2 后重新打开轻桥就会恢复成独立窗口。",
+      "轻桥", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+     if (r == DialogResult.Yes) try { System.Diagnostics.Process.Start(app.DeskUrl); } catch { }
+     Close();
+    }));
    }
   };
+ }
+
+ // WebView2 的加载器路径和运行环境整个进程只能设一次：第二次打开窗口时直接复用（2.0 在这里出错，重新打开窗口会跳到浏览器）。
+ static System.Threading.Tasks.Task<CoreWebView2Environment> envTask;
+ static bool loaderSet;
+ static System.Threading.Tasks.Task<CoreWebView2Environment> Env(App app) {
+  if (!loaderSet) { CoreWebView2Environment.SetLoaderDllFolderPath(Embedded.LoaderFolder(app.Root)); loaderSet = true; }
+  return envTask ??= CoreWebView2Environment.CreateAsync(null, Path.Combine(app.Root, "webview"), new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection,msEdgeTranslate" });
  }
 
  /// <summary>页面里拖进来的文件：WebView2 把真实路径交给我们，直接发，不用先复制一份。</summary>

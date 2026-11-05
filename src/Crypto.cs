@@ -12,6 +12,7 @@ static class Crypto {
  public static string Token(int bytes) => Hex(Random(bytes));
  public static byte[] Hmac(byte[] key, byte[] data) { using var h = new HMACSHA256(key); return h.ComputeHash(data); }
  public static byte[] Hmac(byte[] key, string s) => Hmac(key, Encoding.UTF8.GetBytes(s));
+ public static string Sha(byte[] b) { using var sha = SHA256.Create(); return Hex(sha.ComputeHash(b)); }
  public static string Sha(string s) { using var sha = SHA256.Create(); return Hex(sha.ComputeHash(Encoding.UTF8.GetBytes(s ?? ""))); }
  public static bool Same(byte[] a, byte[] b) {
   if (a == null || b == null || a.Length != b.Length) return false;

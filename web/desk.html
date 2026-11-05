@@ -31,7 +31,7 @@
     <div class="nearby" id="nearby"></div>
   </section>
   <section id="feedWrap">
-    <div class="sec-head"><h2>动态</h2><span class="hint" id="feedHint"></span><div class="grow"></div><button class="btn ghost small" id="clearFeed">清空</button></div>
+    <div class="sec-head"><h2>动态</h2><span class="hint" id="feedHint"></span><div class="grow"></div><button class="btn ghost small hide" id="histBtn" data-open-history="">手机发来的内容</button><button class="btn ghost small" id="clearFeed">清空</button></div>
     <ol class="feed" id="feed"></ol>
   </section>
 </main>
@@ -40,6 +40,8 @@
 <aside class="drawer" id="settings" aria-hidden="true"></aside>
 <div class="modal hide" id="addModal"></div>
 <div class="dropzone hide" id="dropzone"><div class="dz-title">松开，发到…</div><div class="dz-grid" id="dzGrid"></div></div>
+<div class="hist hide" id="history"></div>
+<div class="hist hide" id="cloud"></div>
 <div class="toast" id="toast"></div>
 <script src="/assets/icons.js"></script>
 <script src="/assets/desk.js"></script>

@@ -1,0 +1,16 @@
+[Unit]
+Description=LanBridge relay (轻桥中转)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/lanbridge-relay/relay.mjs
+Environment=PORT=49330 HOST=127.0.0.1 MAX_BODY_MB=300 STATE=/var/lib/lanbridge-relay/relay-state.json
+DynamicUser=yes
+StateDirectory=lanbridge-relay
+Restart=always
+RestartSec=3
+MemoryMax=128M
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

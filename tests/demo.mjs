@@ -2,13 +2,13 @@
 // node tests/demo.mjs [exe]   → 打印 A 的界面地址和手机地址
 import { spawn } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import crypto from 'node:crypto';
-const exe = path.resolve(process.argv[2] || 'bin/Release/LanBridge.exe');
+const exe = path.resolve(process.argv[2] || 'dist/LanBridge.exe');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lb2-demo-'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const procs = [];
 function start(name, port, peer, extra = []) {
   const data = path.join(root, name);
-  procs.push(spawn(exe, ['--data', data, '--port', String(port), '--headless', '--loopback', '--fake-clipboard', '--name', name, '--scan', '127.0.0.1:' + peer, ...extra], { stdio: 'ignore' }));
+  procs.push(spawn(exe, ['--data', data, '--port', String(port), '--headless', '--loopback', '--fake-clipboard', '--name', name, '--scan', '127.0.0.1:' + peer, ...extra, ...(process.env.LB_BUILTIN ? ['--builtin-relay', process.env.LB_BUILTIN] : []), ...(process.env.LB_FAKE_TUNNEL ? ['--fake-tunnel'] : [])], { stdio: 'ignore' }));
   return { name, port, data, base: 'http://127.0.0.1:' + port };
 }
 async function ready(n) { for (;;) { try { n.token = fs.readFileSync(path.join(n.data, 'desk-url.txt'), 'utf8').split('#t=')[1].trim(); await call(n, '/api/local/state'); return; } catch { await sleep(150); } } }
@@ -28,6 +28,37 @@ async function png(w, h) { // 一张渐变“截图”
 process.on('exit', () => procs.forEach(p => p.kill()));
 
 const mode = process.argv[3] || 'full';
+if (mode === 'relay') { // 不在同一个网络：经本机起的中转配对（家里 ↔ 公司），手机也走中转
+  const relayJs = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'relay', 'relay.mjs');
+  // LB_POOL=1：用服务器模式的轻桥当中转（带小云），再放几个演示文件。
+  if (process.env.LB_POOL) procs.push(spawn(exe, ['--relay-server', '--port', '49470', '--bind', '127.0.0.1', '--pool', path.join(root, 'pool'), '--pool-mb', '1024', '--log', root], { stdio: 'ignore' }));
+  else procs.push(spawn(process.execPath, [relayJs], { env: { ...process.env, PORT: '49470', STATE: path.join(root, 'relay.json') }, stdio: 'ignore' }));
+  await sleep(900);
+  const R = 'http://127.0.0.1:49470';
+  const startR = (name, port) => { const data = path.join(root, name); procs.push(spawn(exe, ['--data', data, '--port', String(port), '--headless', '--loopback', '--fake-clipboard', '--name', name, '--relay', R, '--no-lan'], { stdio: 'ignore' })); return { name, port, data, base: 'http://127.0.0.1:' + port }; };
+  const A = startR('家里台式机', 49431), B = startR('公司笔记本', 49432);
+  await ready(A); await ready(B);
+  const aId = (await call(A, '/api/test/info')).id;
+  await until(async () => (await call(B, '/api/local/state')).relay.state === 'ok');
+  const code = (await call(B, '/api/local/remote-code', {})).code;
+  await sleep(500);
+  await call(A, '/api/local/connect-code', { code });
+  const req = await until(async () => (await call(B, '/api/local/state')).requests[0]);
+  await call(B, '/api/local/answer', { id: req.id, allow: true });
+  await until(async () => (await call(A, '/api/local/state')).devices.find(d => d.state === 'online'));
+  const pair = (await call(A, '/api/test/info')).pair;
+  const ph = await (await fetch(R + '/m/' + aId + '/api/phone/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: pair, name: 'iPhone 15' }) })).json();
+  await call(B, '/api/test/copy', { kind: 'text', text: '会议纪要第三条：下周二前把报价单发给客户。' }); await sleep(800);
+  await fetch(R + '/m/' + aId + '/api/phone/text', { method: 'POST', headers: { 'X-LB-Token': ph.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '地铁上想到的：首页标题改成“复制即同步”。' }) }); await sleep(800);
+  if (process.env.LB_POOL) {
+    await until(async () => (await call(A, '/api/local/state')).cloud.ready);
+    for (const [n, kb] of [['报价单-2026Q4.xlsx', 86], ['产品演示.mp4', 4200], ['合同扫描件.pdf', 1300]]) { const f = path.join(root, n); fs.writeFileSync(f, crypto.randomBytes(kb * 1024)); await call(n === '合同扫描件.pdf' ? B : A, '/api/local/send', { target: 'cloud', paths: [f] }); await sleep(900); }
+  }
+  console.log('DESK ' + A.base + '/desk#t=' + A.token);
+  console.log('DESKB ' + B.base + '/desk#t=' + B.token);
+  console.log('PHONE ' + R + '/m/' + aId + '/#t=' + ph.token);
+  setInterval(() => { }, 1 << 30);
+} else {
 const A = start('书房台式机', 49431, 49432), B = start('LAPTOP-出差本', 49432, 49431);
 await ready(A); await ready(B);
 if (mode === 'empty') {
@@ -53,6 +84,8 @@ if (mode === 'empty') {
   await call(A, '/api/test/copy', { kind: 'image', paths: [shot] }); await sleep(600);
   await call(A, '/api/local/send', { target: bId, paths: [doc, mov] }); await sleep(800);
   await fetch(A.base + '/api/phone/text', { method: 'POST', headers: { 'X-LB-Token': ph.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '明天上午 10:00 和李总在国贸三期 B 座 21 层见面，带上合同第二版。' }) }); await sleep(500);
+  await fetch(A.base + '/api/phone/upload?name=IMG_2041.png&clip=1', { method: 'POST', headers: { 'X-LB-Token': ph.token }, body: fs.readFileSync(shot) }); await sleep(500);
+  await fetch(A.base + '/api/phone/text', { method: 'POST', headers: { 'X-LB-Token': ph.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '快递单号 SF1428 0937 6612\n收件人：王经理 138****2201\n地址：北京市朝阳区建国路 89 号华贸中心 3 号楼 1702\n备注：工作日 9:00-18:00 送达，到了先打电话。' }) }); await sleep(500);
   await call(B, '/api/test/copy', { kind: 'text', text: '轻桥会把你复制的文字、截图和文件，自动带到你的其他设备上。\n不用选设备，不用点发送。' });
   await sleep(800);
   console.log('DESK ' + A.base + '/desk#t=' + A.token);
@@ -60,4 +93,5 @@ if (mode === 'empty') {
   console.log('PHONETOKEN ' + ph.token);
   console.log('DESKB ' + B.base + '/desk#t=' + B.token);
   setInterval(() => { }, 1 << 30);
+}
 }

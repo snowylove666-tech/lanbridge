@@ -15,7 +15,13 @@ sealed class Req {
  public string Method, Target, Path, QueryString, Host, Version;
  public readonly Dictionary<string, string> Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
  public long Length; public Stream Body; public IPAddress Remote;
- public bool Loopback => IPAddress.IsLoopback(Remote);
+ /// <summary>请求体是分块传的（只有中转服务接受）；这时 Length 为 -1。</summary>
+ public bool Chunked;
+ /// <summary>这个请求所在的连接（中转服务用来判断长轮询的电脑是不是还连着）。</summary>
+ public TcpClient Conn;
+ /// <summary>经中转来的请求：t 电脑、m 手机、c 配对码；直连时为 null。</summary>
+ public string Via;
+ public bool Loopback => Via == null && IPAddress.IsLoopback(Remote);
  public string H(string name) => Headers.TryGetValue(name, out var v) ? v : "";
  public string Q(string key) {
   foreach (var part in (QueryString ?? "").Split('&')) {
@@ -54,6 +60,8 @@ sealed class Res {
   var h = Encoding.UTF8.GetBytes(sb.ToString()); s.Write(h, 0, h.Length);
   return s;
  }
+ /// <summary>自己写完整的回复（中转服务原样转发）。</summary>
+ public Stream Raw() { if (Sent) throw new InvalidOperationException("already sent"); Sent = true; return s; }
  public void Bytes(byte[] b, string type, int status = 200, IDictionary<string, string> extra = null) { Begin(status, type, b.Length, extra).Write(b, 0, b.Length); s.Flush(); }
  public void Json(object o, int status = 200) => Bytes(J.Bytes(o), "application/json; charset=utf-8", status);
  public void Text(string t, int status = 200) => Bytes(Encoding.UTF8.GetBytes(t), "text/plain; charset=utf-8", status);
@@ -65,8 +73,11 @@ sealed class Res {
 /// </summary>
 sealed class HttpServer : IDisposable {
  readonly TcpListener listener; readonly Action<Req, Res> handler; volatile bool running; int active;
+ readonly bool chunked, publicOk; readonly int maxConnections;
  public const int MaxConnections = 96;
- public HttpServer(IPAddress bind, int port, Action<Req, Res> handler) { listener = new TcpListener(bind, port); this.handler = handler; }
+ /// <param name="chunked">接受分块传的请求体（中转服务要收电脑送回的回复）。</param>
+ public HttpServer(IPAddress bind, int port, Action<Req, Res> handler, bool chunked = false, int maxConnections = MaxConnections, bool publicOk = false) { listener = new TcpListener(bind, port); this.handler = handler; this.chunked = chunked; this.maxConnections = maxConnections; this.publicOk = publicOk; }
+ public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
  public void Start() {
   try { listener.Server.ExclusiveAddressUse = true; } catch { }
   try { listener.Start(64); }
@@ -80,7 +91,8 @@ sealed class HttpServer : IDisposable {
    try { c = listener.AcceptTcpClient(); } catch { if (!running) return; Thread.Sleep(50); continue; }
    var ip = ((IPEndPoint)c.Client.RemoteEndPoint).Address;
    if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
-   if (!Util.IsPrivate(ip) || Interlocked.Increment(ref active) > MaxConnections) { if (Util.IsPrivate(ip)) Interlocked.Decrement(ref active); try { c.Close(); } catch { } continue; }
+   if (!publicOk && !Util.IsPrivate(ip)) { try { c.Close(); } catch { } continue; }
+   if (Interlocked.Increment(ref active) > maxConnections) { Interlocked.Decrement(ref active); try { c.Close(); } catch { } continue; }
    new Thread(() => { try { Serve(c, ip); } finally { Interlocked.Decrement(ref active); try { c.Close(); } catch { } } }) { IsBackground = true, Name = "http-conn" }.Start();
   }
  }
@@ -90,11 +102,13 @@ sealed class HttpServer : IDisposable {
   var net = client.GetStream();
   for (int n = 0; n < 1000 && running; n++) {
    Req r;
-   try { r = ReadHead(net, remote); } catch { return; }
+   try { r = ReadHead(net, remote, chunked); } catch { return; }
    if (r == null) return;
+   r.Conn = client;
    var res = new Res(net);
    if (r.H("Connection").Equals("close", StringComparison.OrdinalIgnoreCase) || r.Version == "HTTP/1.0") res.Close = true;
-   var body = new Bounded(net, r.Length); r.Body = body;
+   var body = r.Chunked ? null : new Bounded(net, r.Length); var chunks = r.Chunked ? new ChunkedIn(net) : null;
+   r.Body = (Stream)body ?? chunks;
    try {
     if (r.H("Expect").Equals("100-continue", StringComparison.OrdinalIgnoreCase)) { var c = Encoding.ASCII.GetBytes("HTTP/1.1 100 Continue\r\n\r\n"); net.Write(c, 0, c.Length); }
     handler(r, res);
@@ -104,7 +118,8 @@ sealed class HttpServer : IDisposable {
    catch (Exception e) { Log.Write("请求出错 " + r.Path + "：" + e); if (!res.Sent) TryJson(res, 500, "出错了：" + e.Message); else return; }
    if (res.Close) { Linger(client, net); return; }
    // 没读完的请求体：小的读掉以便复用连接，大的直接断开。
-   if (body.Remaining > 0) { if (body.Remaining > 4 * 1024 * 1024) { Linger(client, net); return; } try { body.Drain(); } catch { return; } }
+   if (chunks != null && !chunks.Done) { Linger(client, net); return; }
+   if (body != null && body.Remaining > 0) { if (body.Remaining > 4 * 1024 * 1024) { Linger(client, net); return; } try { body.Drain(); } catch { return; } }
   }
  }
  static void TryJson(Res res, int status, string msg) { try { res.Close = true; res.Json(new { error = msg }, status); } catch { } }
@@ -118,7 +133,7 @@ sealed class HttpServer : IDisposable {
   } catch { }
  }
 
- static Req ReadHead(Stream s, IPAddress remote) {
+ static Req ReadHead(Stream s, IPAddress remote, bool allowChunked) {
   var buf = new List<byte>(512); int matched = 0, b;
   while (true) {
    try { b = s.ReadByte(); } catch (IOException) { return null; }
@@ -136,14 +151,49 @@ sealed class HttpServer : IDisposable {
    int c = lines[i].IndexOf(':'); if (c < 1) continue;
    r.Headers[lines[i].Substring(0, c).Trim()] = lines[i].Substring(c + 1).Trim();
   }
-  if (r.H("Transfer-Encoding").Length > 0) throw new ApiError(411, "需要 Content-Length");
+  string te = r.H("Transfer-Encoding");
+  if (te.Length > 0) {
+   if (!allowChunked || te.IndexOf("chunked", StringComparison.OrdinalIgnoreCase) < 0) throw new ApiError(411, "需要 Content-Length");
+   r.Chunked = true; r.Length = -1;
+   r.Headers.Remove("Content-Length");
+  }
   string len = r.H("Content-Length");
-  if (len.Length > 0 && (!long.TryParse(len, NumberStyles.None, CultureInfo.InvariantCulture, out r.Length) || r.Length < 0)) throw new ApiError(400, "Content-Length 无效");
+  if (!r.Chunked && len.Length > 0 && (!long.TryParse(len, NumberStyles.None, CultureInfo.InvariantCulture, out r.Length) || r.Length < 0)) throw new ApiError(400, "Content-Length 无效");
   int q = r.Target.IndexOf('?');
   r.Path = Uri.UnescapeDataString(q < 0 ? r.Target : r.Target.Substring(0, q));
   r.QueryString = q < 0 ? "" : r.Target.Substring(q + 1);
   r.Host = r.H("Host");
   return r;
+ }
+
+ /// <summary>分块传的请求体（Transfer-Encoding: chunked）。</summary>
+ sealed class ChunkedIn : Stream {
+  readonly Stream inner; long left; public bool Done;
+  public ChunkedIn(Stream s) { inner = s; }
+  string Line() {
+   var sb = new StringBuilder(); int b;
+   while ((b = inner.ReadByte()) != -1) { if (b == 10) break; if (b != 13) sb.Append((char)b); if (sb.Length > 4096) throw new IOException("分块格式不对"); }
+   if (b == -1) throw new IOException("连接断了");
+   return sb.ToString();
+  }
+  public override int Read(byte[] buf, int o, int n) {
+   if (Done) return 0;
+   if (left == 0) {
+    string head = Line(); int semi = head.IndexOf(';'); if (semi >= 0) head = head.Substring(0, semi);
+    if (!long.TryParse(head.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out left) || left < 0) throw new IOException("分块格式不对");
+    if (left == 0) { while (Line().Length > 0) { } Done = true; return 0; }
+   }
+   int got = inner.Read(buf, o, (int)Math.Min(n, left));
+   if (got <= 0) throw new IOException("连接断了");
+   left -= got;
+   if (left == 0) Line();
+   return got;
+  }
+  public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
+  public override long Length => throw new NotSupportedException(); public override long Position { get => 0; set => throw new NotSupportedException(); }
+  public override void Flush() { }
+  public override long Seek(long o, SeekOrigin s) => throw new NotSupportedException(); public override void SetLength(long v) => throw new NotSupportedException();
+  public override void Write(byte[] b, int o, int n) => throw new NotSupportedException();
  }
 
  /// <summary>只允许读 Content-Length 字节的流。</summary>

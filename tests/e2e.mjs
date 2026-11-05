@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const exe = path.resolve(process.argv[2] || 'bin/Release/LanBridge.exe');
+const exe = path.resolve(process.argv[2] || 'dist/LanBridge.exe');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lb2-e2e-'));
 const procs = [];
 let passed = 0, failed = 0;
@@ -146,14 +146,38 @@ async function main() {
   ok(await swap('手机上旧的') === 'PC 刚复制的', '轻点背面：电脑刚复制的 → 带回手机');
   ok(await swap('PC 刚复制的') === 'PC 刚复制的', '再点一次：没有新内容，手机剪贴板不变');
   ok(await swap('手机新复制的') === '手机新复制的' && (await test(A, 'clip')).text === '手机新复制的', '手机新复制的 → 发到电脑');
+  ok(await swap('手机新复制的') === '手机新复制的' && (await test(A, 'clip')).text === '手机新复制的', '同一段文字再点一次不会重复发');
+  const swapImg = async () => (await fetch(A.base + '/v1/swap', { method: 'POST', headers: { Authorization: 'Bearer ' + pj.token, 'Content-Type': 'image/png' }, body: img })).status;
+  const feedImgs = async () => (await state(A)).feed.filter(f => f.kind === 'image' && f.from === 'iPhone 测试').length;
+  await swapImg(); const n1 = await feedImgs(); await swapImg(); await swapImg(); const n2 = await feedImgs();
+  ok(n1 >= 1 && n2 === n1, '快捷指令反复带着同一张图（切 App 自动运行）只发一次', n1 + ' → ' + n2);
   const sync1 = await (await fetch(A.base + '/v1/sync', { method: 'POST', headers: { Authorization: 'Bearer ' + pj.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '手机新复制的', mode: 'smart' }) })).json();
   ok(sync1.ok && sync1.action === 'noop', '1.5 版快捷指令接口仍可用（/v1/sync）', JSON.stringify(sync1));
+  await test(A, 'copy', { kind: 'text', text: '电脑刚复制的另一段' });
+  ok(await swap('手机在微信里刚复制的') === '手机在微信里刚复制的' && (await test(A, 'clip')).text === '手机在微信里刚复制的', '切 App 自动运行时：手机刚复制的发到电脑，不会被电脑刚复制的覆盖');
+  ok(await swap('手机在微信里刚复制的') === '手机在微信里刚复制的', '之后再运行：两边一样，什么都不变');
   // 电脑发文件给手机
   await local(A, 'send', { target: 'phone:' + (await state(A)).phones[0].id.replace('phone:', ''), paths: [f1] });
   st = await (await fetch(A.base + '/api/phone/state', { headers: ph })).json();
   ok(st.inbox.length === 1 && st.inbox[0].name === '报告 v1.pdf', '电脑发给手机 → 手机收件箱里有');
   const dl = Buffer.from(await (await fetch(A.base + '/api/phone/file?inbox=' + st.inbox[0].id + '&t=' + pj.token)).arrayBuffer());
   ok(sha(dl) === sha(fs.readFileSync(f1)), '手机下载的文件内容一致');
+  // 电脑上“手机发来的内容”历史
+  const hist = await local(A, 'phone-history');
+  const hText = hist.items.find(x => x.kind === 'text' && x.text === t3), hImg = hist.items.find(x => x.kind === 'image');
+  ok(hText && hImg && hText.phone === 'iPhone 测试' && (await state(A)).history.count === hist.total, '电脑上记下了手机发来的文字和照片', hist.total + ' 条');
+  ok(hist.items.filter(x => x.kind === 'image').length === 2, '快捷指令反复发同一张图，历史里也只多一条');
+  const found = await local(A, 'phone-history?q=' + encodeURIComponent('手机发来的'));
+  ok(found.items.length >= 1 && found.items.every(x => (x.text || '').includes('手机发来的')), '历史能按文字搜索');
+  await test(A, 'copy', { kind: 'text', text: '别的东西' });
+  await local(A, 'history-copy', { id: hText.id });
+  ok((await test(A, 'clip')).text === t3, '历史里点“复制”，又放回电脑剪贴板');
+  const thumbOk = (await fetch(A.base + '/api/local/hthumb?id=' + hImg.id + '&t=' + A.token)).ok;
+  ok(thumbOk, '历史里的照片能显示');
+  const disk = fs.readFileSync(path.join(A.data, 'phone-history.dat'));
+  ok(!disk.includes(Buffer.from(t3)), '历史存在磁盘上是加密的（看不到原文）');
+  await local(A, 'history-remove', { id: hText.id });
+  ok(!(await local(A, 'phone-history')).items.some(x => x.id === hText.id), '历史里的一条可以删掉');
   const bad = await fetch(A.base + '/api/phone/state', { headers: { 'X-LB-Token': 'x'.repeat(48) } });
   ok(bad.status === 401, '没连接的手机拿不到任何内容');
 
