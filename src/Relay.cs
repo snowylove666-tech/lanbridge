@@ -14,8 +14,8 @@ namespace LanBridge;
 /// 电脑之间的内容本来就用设备组密钥加密，中转看不到明文。
 /// </summary>
 sealed class Relay {
- /// <summary>内置的中转地址（部署后填上）。用户在界面上点“开启跨网络”并同意后才用；也可以填自己的。组内自动同步。</summary>
- public const string Default = "";
+ /// <summary>内置的常驻中转：阿里云北京那台 Windows 服务器（带 1 GB 小云）。用户在界面上点“开启跨网络”并同意后才用；也可以填自己的。组内自动同步。</summary>
+ public const string Default = "http://47.95.194.127:49330";
  const long CodeLife = 10 * 60 * 1000;
  const string CodeChars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 

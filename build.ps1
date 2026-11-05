@@ -16,8 +16,12 @@ if ($running) { Start-Sleep -Milliseconds 1200 }
 Copy-Item bin\Release\LanBridge.exe $exe -Force
 # 编译中间目录里的副本删掉，免得 Windows 搜索里出现好几个“LanBridge.exe”。
 Remove-Item bin\Release\LanBridge.exe, obj\Release\LanBridge.exe -Force -ErrorAction SilentlyContinue
-Get-ChildItem $Out -Filter 'LanBridge*.exe' | Where-Object { $_.Name -ne 'LanBridge.exe' } | Remove-Item -Force
+Get-ChildItem $Out -Filter 'LanBridge*.exe' | Where-Object { $_.Name -notin 'LanBridge.exe', 'LanBridgeRelay.exe' } | Remove-Item -Force
 if ($running) { Start-Process $exe -ArgumentList '--background' }
-$hash = (Get-FileHash "$Out\LanBridge.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  LanBridge.exe" | Out-File "$Out\SHA256SUMS.txt" -Encoding ascii
+# 服务器版（只有常驻中转 + 小云，约 75 KB）：装到云服务器用，见 relay/README.md。
+dotnet build relay/server/LanBridgeRelay.csproj -c Release -nologo -v q
+if ($LASTEXITCODE -ne 0) { throw '服务器版编译失败' }
+Copy-Item relay\server\bin\Release\LanBridgeRelay.exe "$Out\LanBridgeRelay.exe" -Force
+$sums = foreach ($n in 'LanBridge.exe', 'LanBridgeRelay.exe') { (Get-FileHash "$Out\$n" -Algorithm SHA256).Hash.ToLowerInvariant() + "  $n" }
+$sums | Out-File "$Out\SHA256SUMS.txt" -Encoding ascii
 Write-Output "已生成 $Out\LanBridge.exe  ($([math]::Round((Get-Item "$Out\LanBridge.exe").Length/1KB)) KB)"

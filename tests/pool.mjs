@@ -20,7 +20,7 @@ const sha = b => crypto.createHash('sha256').update(b).digest('hex');
 const RP = 49480, R = 'http://127.0.0.1:' + RP;
 
 function startServer() {
-  const p = spawn(exe, ['--relay-server', '--port', String(RP), '--bind', '127.0.0.1', '--pool', path.join(root, 'pool'), '--pool-mb', '3', '--relay-max-mb', '64', '--log', root], { stdio: 'ignore' });
+  const p = spawn(process.env.POOL_SERVER_EXE || exe, ['--relay-server', '--port', String(RP), '--bind', '127.0.0.1', '--pool', path.join(root, 'pool'), '--pool-mb', '3', '--relay-max-mb', '64', '--log', root], { stdio: 'ignore' });
   procs.push(p); return p;
 }
 async function health() { try { return await (await fetch(R + '/health')).json(); } catch { return null; } }

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    轻桥中转（服务器版）：只有常驻中转 + 小云，不带窗口、剪贴板和 WebView2。
+    和电脑版 LanBridge.exe 的 relay-server 模式是同一份代码（src/RelayServer.cs、src/FilePool.cs 等），只是编得更小，
+    方便用云助手“发送文件”这类有大小限制的方式传到服务器。目标 .NET Framework 4.8（Windows Server 自带）。
+    编译：dotnet build relay/server/LanBridgeRelay.csproj -c Release
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LanBridgeRelay</AssemblyName>
+    <RootNamespace>LanBridge</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <Product>轻桥中转 LanBridge Relay</Product>
+    <Description>轻桥常驻中转 + 小云</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Security" />
+    <Compile Include="RelayMain.cs" />
+    <Compile Include="..\..\src\Http.cs" />
+    <Compile Include="..\..\src\Util.cs" />
+    <Compile Include="..\..\src\Crypto.cs" />
+    <Compile Include="..\..\src\RelayServer.cs" />
+    <Compile Include="..\..\src\FilePool.cs" />
+    <EmbeddedResource Include="..\..\web\pool.html" LogicalName="web/pool.html" />
+  </ItemGroup>
+</Project>

@@ -1,4 +1,4 @@
-﻿# 轻桥常驻中转 + 小云：装到 Windows 服务器（阿里云等）。和电脑上的轻桥是同一个 LanBridge.exe，用 --relay-server 只当中转。
+﻿# 轻桥常驻中转 + 小云：装到 Windows 服务器（阿里云等）。程序用服务器版 LanBridgeRelay.exe（75 KB），电脑版 LanBridge.exe 也行（同一份代码）。
 # 不开窗口、不碰剪贴板，约 30 MB 内存；开机自动运行（计划任务，LOCAL SERVICE 身份，低优先级）。
 #
 # 用法（管理员 PowerShell）：
@@ -6,7 +6,7 @@
 #   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Exe C:\路径\LanBridge.exe
 # 选项：-Port 49330  -PoolMB 1024（小云大小，0 关掉）  -MaxMB 300（单次上限）  -Uninstall
 param(
-  [string]$Url, [string]$Exe, [string]$Sha256,
+  [string]$Url, [string]$Exe, [string]$Sha256, [string[]]$Mirror = @('https://ghfast.top', 'https://gh-proxy.com', 'https://ghproxy.net'),
   [int]$Port = 49330, [int]$PoolMB = 1024, [int]$MaxMB = 300,
   [switch]$Uninstall
 )
@@ -18,24 +18,34 @@ $Rule = 'LanBridge relay TCP ' + $Port
 if ($Uninstall) {
   Stop-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue
   Unregister-ScheduledTask -TaskName $Task -Confirm:$false -ErrorAction SilentlyContinue
-  Get-Process LanBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Dir*" } | Stop-Process -Force
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Dir*" } | Stop-Process -Force
   Remove-NetFirewallRule -DisplayName $Rule -ErrorAction SilentlyContinue
   Remove-Item $Dir -Recurse -Force -ErrorAction SilentlyContinue
   'LANBRIDGE_RELAY_UNINSTALLED'; exit 0
 }
 
 New-Item -ItemType Directory -Force $Dir, (Join-Path $Dir 'pool') | Out-Null
-$target = Join-Path $Dir 'LanBridge.exe'
-$new = Join-Path $Dir 'LanBridge.new'
+$target = Join-Path $Dir 'LanBridgeRelay.exe'
+$new = Join-Path $Dir 'LanBridgeRelay.new'
 if ($Url) {
+  # 国内服务器直连 GitHub 常被掐断：-Mirror 依次试加速地址，每个都核对 SHA-256，对不上的不用。
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-  Invoke-WebRequest -Uri $Url -OutFile $new -UseBasicParsing
+  $tries = @($Url) + @($Mirror | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('/') + '/' + $Url })
+  $got = $false
+  foreach ($u in $tries) {
+    try {
+      Invoke-WebRequest -Uri $u -OutFile $new -UseBasicParsing -TimeoutSec 120
+      if (-not $Sha256 -or (Get-FileHash $new -Algorithm SHA256).Hash -eq $Sha256.ToUpperInvariant()) { 'DOWNLOADED_FROM=' + $u; $got = $true; break }
+      'HASH_MISMATCH ' + $u; Remove-Item $new -Force
+    } catch { 'DOWNLOAD_FAILED ' + $u + ' : ' + $_.Exception.Message }
+  }
+  if (-not $got) { throw '下载不了程序（GitHub 和加速地址都不通），可以改用 -Exe 本地文件' }
 } elseif ($Exe) { Copy-Item $Exe $new -Force }
 elseif (-not (Test-Path $target)) { throw '要给 -Url 或 -Exe' }
 if (Test-Path $new) {
   if ($Sha256 -and (Get-FileHash $new -Algorithm SHA256).Hash -ne $Sha256.ToUpperInvariant()) { Remove-Item $new -Force; throw '下载的文件校验不对' }
   Stop-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue
-  Get-Process LanBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target } | Stop-Process -Force
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target } | Stop-Process -Force
   Start-Sleep -Milliseconds 800
   Move-Item $new $target -Force
 }
@@ -61,6 +71,6 @@ foreach ($i in 1..40) {
   try { $h = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3; if ($h.app -eq 'LanBridge relay') { $ok = $true; break } } catch { }
 }
 if (-not $ok) { Get-Content (Join-Path $Dir 'lanbridge.log') -Tail 20 -ErrorAction SilentlyContinue; throw '中转没起来（上面是日志）' }
-$p = Get-Process LanBridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target } | Select-Object -First 1
+$p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target } | Select-Object -First 1
 'LANBRIDGE_RELAY_OK version=' + $h.ver + ' port=' + $Port + ' poolMB=' + $h.pool.capMB + ' memMB=' + [math]::Round($p.WorkingSet64 / 1MB)
 '还要在云服务器控制台的安全组里放行 TCP ' + $Port + '（入方向）。然后在轻桥里填 http://服务器公网IP:' + $Port

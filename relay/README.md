@@ -23,6 +23,7 @@
 powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Url <LanBridge.exe 的下载地址> -Sha256 <哈希>
 ```
 
+服务器版 `LanBridgeRelay.exe`（`relay/server/`，`build.ps1` 一起编到 `dist\`，约 75 KB）和上面同一份代码，只是不带窗口和 WebView2，用 `-Exe` 装。国内服务器连 GitHub 常被掐断、仓库又是私有的时候：把它 gzip 再 base64，分几段（每段不超过 24 KB）用阿里云云助手“发送文件”放到 `C:\ProgramData\LanBridgeRelay\upload`，再用云助手执行一段 PowerShell 拼回来、核对 SHA-256、调本脚本安装（2026-11-05 我们的阿里云就是这样装的，内置地址 `http://47.95.194.127:49330` 写在 `src/Relay.cs` 的 `Default`）。
 装到 `C:\ProgramData\LanBridgeRelay`，计划任务 `LanBridgeRelay`（开机运行、LOCAL SERVICE、低优先级、崩了自动重启），Windows 防火墙放行端口。云服务器的安全组要另外放行 TCP 49330。选项：`-Port`、`-PoolMB`（0 关掉小云）、`-MaxMB`、`-Uninstall`。
 
 小云：文件在电脑上用每个文件自己的随机密钥加密后才上传（文件名也在密文里），密钥再用设备组密钥加密存在服务器上，所以服务器只有密文。组里的电脑都能列出和下载；“复制链接”是 `/d/文件ID#密钥`，`#` 后面浏览器不会发给服务器，下载页在浏览器里解密（http 页面没有 WebCrypto 时用页面里自带的纯 JS AES/SHA-256，`node tests/poolcrypto.mjs` 和 Node 对过）。Node 版 `relay.mjs` 暂时不带小云。
