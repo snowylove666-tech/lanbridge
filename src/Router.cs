@@ -130,7 +130,7 @@ sealed class Router {
     }
     case "qr": {
      string ip = q.Q("ip"); if (ip.Length == 0) ip = Util.PrimaryIp();
-     string url = q.Q("mode") == "relay" && app.Relay.PhoneUrl != null ? app.Relay.PhoneUrl + "#p=" + app.Phones.PairSecret : PairUrl(ip);
+     string url = q.Q("mode") == "relay" && app.Relay.PhoneUrl != null ? app.Relay.PhoneUrl + "?p=" + app.Phones.PairSecret : PairUrl(ip);
      res.Bytes(Encoding.UTF8.GetBytes(Qr.Svg(url)), "image/svg+xml"); return;
     }
     case "thumb": Thumb(q, res); return;
@@ -290,7 +290,7 @@ sealed class Router {
   res.Bytes(File.ReadAllBytes(file.path), PhoneHub.MimeOf(file.path));
  }
 
- public string PairUrl(string ip) => "http://" + ip + ":" + app.Opt.Port + "/#p=" + app.Phones.PairSecret;
+ public string PairUrl(string ip) => "http://" + ip + ":" + app.Opt.Port + "/?p=" + app.Phones.PairSecret; // 用 ?p= 不用 #p=：有的扫码器（如微信）会把 # 转成 %23，中转就不认这个地址
 
  object Snapshot() {
   long now = Util.Ms();

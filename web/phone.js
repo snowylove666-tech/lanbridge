@@ -30,7 +30,8 @@ async function call(path, body, extra) {
 // ───────────── 连接 ─────────────
 
 async function boot() {
-  const h = new URLSearchParams(location.hash.slice(1)), secret = h.get('p');
+  // 配对码在 ?p=（二维码）或 #p=（旧二维码）里
+  const h = new URLSearchParams(location.hash.slice(1)), qs = new URLSearchParams(location.search), secret = h.get('p') || qs.get('p');
   if (h.get('t')) saveToken(h.get('t')); // 从局域网网页换到中转地址时带过来的授权
   if (h.get('moved')) localStorage.setItem(K + 'moved', '1');
   if (secret || h.get('t')) history.replaceState(null, '', BASE);
