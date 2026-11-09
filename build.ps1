@@ -13,7 +13,8 @@ $exe = (Resolve-Path $Out).Path + '\LanBridge.exe'
 $running = Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'LanBridge*.exe' -and $_.ExecutablePath -eq $exe }
 foreach ($p in $running) { Stop-Process -Id $p.ProcessId -Force }
 if ($running) { Start-Sleep -Milliseconds 1200 }
-Copy-Item bin\Release\LanBridge.exe $exe -Force
+# 刚退出的轻桥有时还占着文件一小会儿：多试几次，免得换不上又没重启。
+foreach ($i in 1..20) { try { Copy-Item bin\Release\LanBridge.exe $exe -Force -ErrorAction Stop; break } catch { if ($i -eq 20) { if ($running) { Start-Process $exe -ArgumentList '--background' }; throw } ; Start-Sleep -Milliseconds 500 } }
 # 编译中间目录里的副本删掉，免得 Windows 搜索里出现好几个“LanBridge.exe”。
 Remove-Item bin\Release\LanBridge.exe, obj\Release\LanBridge.exe -Force -ErrorAction SilentlyContinue
 Get-ChildItem $Out -Filter 'LanBridge*.exe' | Where-Object { $_.Name -notin 'LanBridge.exe', 'LanBridgeRelay.exe' } | Remove-Item -Force

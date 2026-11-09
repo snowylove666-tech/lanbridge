@@ -124,8 +124,11 @@ sealed class PhoneHub {
   string name = Util.SafeName(q.Q("name")); long size = q.Length;
   if (size <= 0) throw new ApiError(400, "文件是空的");
   if (size > 8L << 30) throw new ApiError(413, "单个文件最大 8 GB");
-  Directory.CreateDirectory(C.receiveFolder);
-  string path = Util.Reserve(C.receiveFolder, name), part = path + ".lbpart";
+  bool cloud = q.Q("to") == "cloud";
+  if (cloud) app.Cloud.CheckRoom(size);
+  string folder = cloud ? Path.Combine(app.Root, "stage", "cloud-" + Crypto.Token(6)) : C.receiveFolder;
+  Directory.CreateDirectory(folder);
+  string path = Util.Reserve(folder, name), part = path + ".lbpart";
   try {
    using (var f = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16)) {
     var buf = new byte[1 << 16]; long done = 0; int n;
@@ -135,6 +138,7 @@ sealed class PhoneHub {
    File.Move(part, path);
   } catch { try { File.Delete(part); } catch { } throw; }
   finally { Util.Release(path); }
+  if (cloud) { app.Cloud.UploadFrom(path, p.name); return new { ok = true, name = Path.GetFileName(path), complete = true }; }
 
   string group = q.Q("group"); int.TryParse(q.Q("count"), out int count); bool clip = q.Q("clip") == "1";
   List<string> done2 = null;

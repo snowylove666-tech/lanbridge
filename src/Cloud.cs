@@ -73,19 +73,39 @@ sealed class Cloud {
   });
  }
 
+ /// <summary>手机传上来的文件（已存在暂存目录）：放到小云，记上是哪部手机放的，传完删掉暂存。</summary>
+ public void UploadFrom(string path, string from) {
+  Need();
+  Util.Thread("cloud-up", () => {
+   try { Put(path, Path.GetFileName(path), from); }
+   finally { try { File.Delete(path); Directory.Delete(Path.GetDirectoryName(path)); } catch { } }
+  });
+ }
+
+ /// <summary>上传前先看放不放得下，免得手机传完一大段才知道。</summary>
+ public void CheckRoom(long size) {
+  Need();
+  long maxMB = MaxMB();
+  if (maxMB > 0 && size > maxMB << 20) throw new ApiError(413, "小云一次最多放 " + maxMB + " MB");
+ }
+ long MaxMB() {
+  long maxMB = app.Relay.PoolMB > 0 ? Math.Min(app.Relay.PoolMB, app.Relay.MaxBody >> 20) : 0;
+  if (maxFileMB > 0) maxMB = Math.Min(maxMB, maxFileMB);
+  return maxMB;
+ }
+
  void Fail(string name, string why) => app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "send", dir = "out", status = "failed", to = new List<string> { "小云" }, note = why, files = new List<FeedFile> { new FeedFile { name = name } } });
 
- void Put(string path, string name) {
+ void Put(string path, string name, string from = null) {
   var fi = new FileInfo(path);
   var nameBytes = Encoding.UTF8.GetBytes(name);
   long plain = 4 + nameBytes.Length + fi.Length, sealedLen = Keys.SealedLength(plain);
-  var item = app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "send", dir = "out", status = "sending", to = new List<string> { "小云" }, total = fi.Length, files = new List<FeedFile> { new FeedFile { name = name, path = path, size = fi.Length } } });
+  var item = app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "send", dir = "out", status = "sending", to = new List<string> { "小云" }, total = fi.Length, files = new List<FeedFile> { new FeedFile { name = name, path = from == null ? path : null, size = fi.Length } } });
   try {
-   long maxMB = app.Relay.PoolMB > 0 ? Math.Min(app.Relay.PoolMB, app.Relay.MaxBody >> 20) : 0;
-   if (maxFileMB > 0) maxMB = Math.Min(maxMB, maxFileMB);
+   long maxMB = MaxMB();
    if (maxMB > 0 && sealedLen > maxMB << 20) throw new ApiError(413, "小云一次最多放 " + maxMB + " MB");
    var key = Crypto.Random(32); var k = new Keys(key);
-   string meta = Convert.ToBase64String(Group.Seal(J.Bytes(new { v = 1, name, size = fi.Length, from = C.deviceName, key = B64Url(key) })));
+   string meta = Convert.ToBase64String(Group.Seal(J.Bytes(new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key) })));
    var r = Make("/f/" + Space, "POST", 60000);
    r.ContentType = "application/octet-stream"; r.ContentLength = sealedLen; r.AllowWriteStreamBuffering = false; r.ReadWriteTimeout = 120000; r.Timeout = 600000;
    r.Headers["X-LB-Meta"] = meta;

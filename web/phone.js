@@ -32,6 +32,7 @@ async function call(path, body, extra) {
 async function boot() {
   const h = new URLSearchParams(location.hash.slice(1)), secret = h.get('p');
   if (h.get('t')) saveToken(h.get('t')); // 从局域网网页换到中转地址时带过来的授权
+  if (h.get('moved')) localStorage.setItem(K + 'moved', '1');
   if (secret || h.get('t')) history.replaceState(null, '', BASE);
   if (h.has('guide')) view = 'guide';
   if (secret && token) { try { await call('/api/phone/state'); } catch (e) { if (e.status === 401) token = ''; } }
@@ -87,6 +88,7 @@ async function loop() {
       const r = await fetch(U('/api/phone/state?rev=' + (first ? 0 : rev)), { headers: { 'X-LB-Token': token } });
       if (r.status === 401) { localStorage.removeItem(K + 't'); token = ''; const j = await r.json().catch(() => ({})); showJoin(j.error); return; }
       S = await r.json(); rev = S.rev; first = false;
+      if (!viaRelay && S.relay) { alive = false; location.replace(S.relay + '#t=' + encodeURIComponent(token) + '&moved=1'); return; }
       render();
       refreshCloud();
     } catch { setConn('连不上电脑', false); await sleep(2000); }
@@ -134,8 +136,8 @@ function sendCard() {
   </div>`;
 }
 
-function upsHtml() {
-  return uploads.map(u => `<div class="up"><div class="row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${esc(u.name)}</span><span>${u.err ? '<span style="color:var(--bad)">' + esc(u.err) + '</span>' : u.done ? '✓ 已发到电脑' : Math.round(u.p * 100) + '%'}</span></div>${u.done || u.err ? '' : `<div class="bar"><i style="width:${(u.p * 100).toFixed(1)}%"></i></div>`}</div>`).join('');
+function upsHtml(cloud) {
+  return uploads.filter(u => !!u.cloud === !!cloud).map(u => `<div class="up"><div class="row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${esc(u.name)}</span><span>${u.err ? '<span style="color:var(--bad)">' + esc(u.err) + '</span>' : u.done ? (u.cloud ? '✓ 电脑正在放到小云' : '✓ 已发到电脑') : Math.round(u.p * 100) + '%'}</span></div>${u.done || u.err ? '' : `<div class="bar"><i style="width:${(u.p * 100).toFixed(1)}%"></i></div>`}</div>`).join('');
 }
 
 // 小云：电脑那边的文件池。手机点“下载”打开链接，下载页在手机上解密（电脑关着也能下）。
@@ -147,8 +149,14 @@ async function refreshCloud() {
   try { const r = await call('/api/phone/cloud'); cloudList = r.ready ? r : null; render(); } catch { }
 }
 function cloudCard() {
-  if (!cloudList || !cloudList.files.length) return '';
-  return `<div class="card"><div class="ct">${icon('cloud')}小云<span class="muted" style="margin-left:auto;font-weight:400;font-size:12px">${cloudList.usedMB} / ${cloudList.capMB} MB</span></div>${cloudList.files.slice(0, 20).map(x => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)} · ${when(x.at)}${x.from ? ' · ' + esc(x.from) : ''}</div></div><a class="btn soft small" href="${esc(x.link)}" target="_blank" rel="noopener">${icon('download')}下载</a></div>`).join('')}</div>`;
+  if (!cloudList) return '';
+  return `<div class="card"><div class="ct">${icon('cloud')}小云<span class="muted" style="margin-left:auto;font-weight:400;font-size:12px">${cloudList.usedMB} / ${cloudList.capMB} MB</span></div>
+    ${cloudList.files.length ? '' : '<div class="empty">放进来的照片、文件，组里的电脑和这部手机在哪都能下载，也可以把链接发给别人。放满 1 GB 会先删最早的。</div>'}
+    ${cloudList.files.slice(0, 20).map(x => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)} · ${when(x.at)}${x.from ? ' · ' + esc(x.from) : ''}</div></div><a class="btn soft small" href="${esc(x.link)}" target="_blank" rel="noopener">${icon('download')}下载</a></div>`).join('')}
+    <div class="actions"><button class="btn soft big" id="cloudPick">${icon('upload')}放照片 / 文件到小云</button></div>
+    <div id="cups">${upsHtml(true)}</div>
+    <input type="file" id="cloudFiles" multiple hidden>
+  </div>`;
 }
 
 function inboxCard() {
@@ -170,6 +178,7 @@ function render() {
   const tip = isIOS() && !standalone() && localStorage.getItem(K + 'tip') !== '1';
   $('app').innerHTML = `
     ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
+    ${viaRelay && localStorage.getItem(K + 'moved') === '1' ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。<b>请重新放一次到主屏幕：</b>点 Safari 底部的“分享” → “添加到主屏幕”，再把主屏幕上旧的“轻桥”图标删掉（旧图标只在家里的 Wi-Fi 能用）。${isIOS() ? '设置过“轻点背面”的，点下面“设置轻点背面”，按第 1 步复制新地址替换快捷指令里的旧地址。' : ''}</div>` : ''}
     <div id="clipBox">${clipCard()}</div>
     ${sendCard()}
     ${inboxCard()}
@@ -202,6 +211,9 @@ function bind() {
   $('files').onchange = () => { upload([...$('files').files]); $('files').value = ''; };
   $('toClip').onchange = e => { sendToClip = e.target.checked; localStorage.setItem(K + 'clip', sendToClip ? '1' : '0'); };
   if ($('tipX')) $('tipX').onclick = () => { localStorage.setItem(K + 'tip', '1'); render(); };
+  if ($('movedX')) $('movedX').onclick = () => { localStorage.removeItem(K + 'moved'); render(); };
+  if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
+  if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
   if ($('guide')) $('guide').onclick = () => { view = 'guide'; render(); scrollTo(0, 0); };
   if ($('guide2')) $('guide2').onclick = () => { view = 'guide'; render(); scrollTo(0, 0); };
   if ($('tapX')) $('tapX').onclick = () => { localStorage.setItem(K + 'tapTip', '1'); render(); };
@@ -240,17 +252,17 @@ function copyText(text) {
   } catch { return false; }
 }
 
-async function upload(files) {
+async function upload(files, cloud) {
   if (!files.length) return;
   const group = Math.random().toString(36).slice(2, 10), count = files.length;
-  const batch = files.map(f => ({ name: f.name || 'image.png', p: 0, file: f }));
+  const batch = files.map(f => ({ name: f.name || 'image.png', p: 0, file: f, cloud: !!cloud }));
   uploads = batch.concat(uploads).slice(0, 12);
   refreshUps();
   for (const u of batch) {
     try {
       await new Promise((ok, bad) => {
         const x = new XMLHttpRequest();
-        x.open('POST', U(`/api/phone/upload?name=${encodeURIComponent(u.name)}&group=${group}&count=${count}&clip=${sendToClip ? 1 : 0}`));
+        x.open('POST', U(`/api/phone/upload?name=${encodeURIComponent(u.name)}&group=${group}&count=${count}&clip=${sendToClip && !cloud ? 1 : 0}${cloud ? '&to=cloud' : ''}`));
         x.setRequestHeader('X-LB-Token', token);
         x.upload.onprogress = e => { if (e.lengthComputable) { u.p = e.loaded / e.total; refreshUps(); } };
         x.onload = () => { if (x.status === 200) ok(); else { let m = '失败'; try { m = JSON.parse(x.responseText).error || m; } catch { } bad(new Error(m)); } };
@@ -261,9 +273,9 @@ async function upload(files) {
     } catch (e) { u.err = e.message; }
     refreshUps();
   }
-  if (batch.every(u => u.done)) toast(sendToClip ? '已发到电脑，Ctrl+V 就能粘贴' : '已发到电脑');
+  if (batch.every(u => u.done)) toast(cloud ? '电脑收到了，正在放到小云，好了会出现在上面' : sendToClip ? '已发到电脑，Ctrl+V 就能粘贴' : '已发到电脑');
 }
-function refreshUps() { const el = $('ups'); if (el) el.innerHTML = upsHtml(); }
+function refreshUps() { const el = $('ups'); if (el) el.innerHTML = upsHtml(); const c = $('cups'); if (c) c.innerHTML = upsHtml(true); }
 
 // ───────────── 轻点背面（快捷指令） ─────────────
 
