@@ -75,6 +75,12 @@ sealed class PhoneHistory {
  }
 
  public void Remove(string id) { lock (gate) { items.RemoveAll(x => x.id == id); Rev++; } Save(); app.Changes.Bump(); }
+ /// <summary>几张卡片并成一部手机时，历史也归到留下的那张。</summary>
+ public void Merge(List<string> from, string to) {
+  lock (gate) { foreach (var x in items) if (from.Contains(x.phoneId)) x.phoneId = to; Rev++; }
+  Save(); app.Changes.Bump();
+ }
+
  public void Clear(string phoneId) { lock (gate) { items.RemoveAll(x => string.IsNullOrEmpty(phoneId) || x.phoneId == phoneId); Rev++; } Save(); app.Changes.Bump(); }
  public int Count { get { lock (gate) return items.Count; } }
 

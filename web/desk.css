@@ -235,3 +235,31 @@ details.fold2:not([open]) { gap: 0; }
 .cdrop { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 18px; margin-bottom: 14px; border: 1.5px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
 .clink { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
 
+/* 2.2.4 动态：按天分组，一条一行 */
+.addbtn { position: relative; }
+.addbtn .badge { margin-left: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; display: inline-grid; place-items: center; }
+.ftabs { display: inline-flex; gap: 2px; background: var(--line2); border-radius: 8px; padding: 2px; }
+.ftabs button { border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+.ftabs button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.feed .fday { padding: 10px 14px 4px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line2); background: var(--panel2); }
+.feed .fday:first-child { border-top: 0; }
+.feed .fi { align-items: center; gap: 10px; padding: 8px 14px; }
+.feed .fday + .fi, .feed .fday + .finfo { border-top: 0; }
+.feed .fi .fic { width: 28px; height: 28px; border-radius: 8px; }
+.feed .fi .fic svg { width: 15px; height: 15px; }
+.feed .fi .fl { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.feed .fi .ft { font-size: 13.5px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; flex: none; }
+.feed .fi button.ft { border: 0; background: none; padding: 0; font-family: inherit; cursor: pointer; text-align: left; }
+.feed .fi button.ft:hover { color: var(--accent); }
+.feed .fi .fm { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.feed .fi .bar { margin-top: 6px; }
+.feed .fi .fnote { margin-top: 2px; }
+.feed .fi .mini { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; flex: none; background: var(--line2); }
+.feed .fi .fst { flex: none; display: inline-flex; }
+.feed .fi .fwhen { flex: none; width: 38px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.feed .fi .fa { align-items: center; }
+.feed .fi .fa .iconbtn { width: 26px; height: 26px; }
+.feed .finfo { display: flex; align-items: center; gap: 6px; padding: 3px 14px 3px 52px; font-size: 12px; color: var(--muted); }
+.feed .finfo .iconbtn { width: 22px; height: 22px; opacity: 0; }
+.feed .finfo:hover .iconbtn { opacity: 1; }
+.feed .finfo .iconbtn svg { width: 12px; height: 12px; }

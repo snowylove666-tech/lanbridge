@@ -20,15 +20,48 @@ sealed class PhoneHub {
  readonly Dictionary<string, (string text, string clip, long until)> receipts = new Dictionary<string, (string, string, long)>();
  readonly Dictionary<string, List<string>> groups = new Dictionary<string, List<string>>();
 
- public PhoneHub(App app) { this.app = app; RefreshPair(); }
+ public PhoneHub(App app) { this.app = app; RefreshPair(); MergeOld(); }
+
+ void MergeOld() {
+  if (C.phonesMerged) return;
+  var moves = new List<(List<string> from, string to)>();
+  lock (Gate) {
+   foreach (var g in C.phones.GroupBy(x => x.name).Where(g => g.Count() > 1).ToList()) {
+    var keep = g.OrderByDescending(x => x.seen).First();
+    var drop = g.Where(x => x != keep).Select(x => x.id).ToList();
+    C.phones.RemoveAll(x => drop.Contains(x.id));
+    moves.Add((drop, keep.id));
+   }
+   C.phonesMerged = true; app.Save();
+  }
+  foreach (var m in moves) app.History.Merge(m.from, m.to);
+ }
 
  public void RefreshPair() { lock (Gate) { PairSecret = Crypto.Token(10); PairUntil = Util.Ms() + 15 * 60 * 1000; } app.Changes.Bump(); }
  public void ClipChanged() => changes.Bump();
 
  Phone Add(string name, out string token) {
   token = Crypto.Token(24);
-  var p = new Phone { id = Crypto.Token(6), name = Util.Clip(string.IsNullOrWhiteSpace(name) ? "我的 iPhone" : name.Trim(), 30), hash = Crypto.Sha(token), added = Util.Ms(), seen = Util.Ms() };
-  lock (Gate) { C.phones.Add(p); while (C.phones.Count > 20) C.phones.RemoveAt(0); app.Save(); }
+  string nm = Util.Clip(string.IsNullOrWhiteSpace(name) ? "我的 iPhone" : name.Trim(), 30);
+  Phone p; List<string> merged;
+  lock (Gate) {
+   // 同名、现在不在线的手机多半是同一部手机以前扫的码（换了浏览器、换了地址、删了主屏幕图标）：
+   // 沿用最近那张卡片（换新授权，旧授权作废），其余同名离线的并进来，免得设备越扫越多。
+   long now = Util.Ms();
+   var same = C.phones.Where(x => x.name == nm && now - x.seen > 40000).OrderByDescending(x => x.seen).ToList();
+   p = same.FirstOrDefault();
+   merged = same.Skip(1).Select(x => x.id).ToList();
+   if (p != null) {
+    C.phones.RemoveAll(x => merged.Contains(x.id));
+    inbox.RemoveAll(x => merged.Contains(x.phoneId));
+    p.hash = Crypto.Sha(token); p.seen = now; p.init = false; p.baseline = null; p.lastClip = null;
+   } else {
+    p = new Phone { id = Crypto.Token(6), name = nm, hash = Crypto.Sha(token), added = now, seen = now };
+    C.phones.Add(p); while (C.phones.Count > 20) C.phones.RemoveAt(0);
+   }
+   app.Save();
+  }
+  if (merged.Count > 0) app.History.Merge(merged, p.id);
   app.Changes.Bump();
   return p;
  }

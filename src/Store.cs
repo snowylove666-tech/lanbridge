@@ -32,6 +32,8 @@ public sealed class Config {
  public string relay, relayKey; public long relayAt;
  /// <summary>这台电脑开着临时中转（自己当中转 + Cloudflare 临时隧道）。</summary>
  public bool relayTemp;
+ /// <summary>2.2.4 起同名手机只留一张卡片：老数据里已经扫出来的重复卡片在第一次启动时并一次。</summary>
+ public bool phonesMerged;
  public string receiveFolder;
  public List<Member> members = new List<Member>();
  public List<string> blocked = new List<string>();

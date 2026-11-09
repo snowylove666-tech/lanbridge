@@ -62,9 +62,15 @@ function render() {
 function renderTop() {
   if (!editingName) set($('me'), `<span class="me-label">本机</span><b>${esc(S.me.name)}</b>${icon('edit', 'muted')}`);
   const p = S.settings.paused;
-  const online = S.devices.filter(d => d.state !== 'offline').length;
+  const online = S.devices.filter(d => d.state !== 'offline').length + S.phones.filter(d => d.state !== 'offline').length;
+  const relayOk = S.relay && S.relay.url && S.relay.state === 'ok';
+  const parts = [];
+  if (online) parts.push('自动同步中');
+  if (relayOk) parts.push('跨网络已开');
+  if (S.cloud && S.cloud.ready) parts.push('小云可用');
+  if (!parts.length) parts.push('等其他设备上线');
   $('sync').className = 'sync' + (p ? ' paused' : '');
-  set($('sync'), p ? `${icon('pause')}同步已暂停` : `<i class="dot ${online ? 'on' : ''}"></i>${online ? '自动同步中' : '等其他设备上线'}`);
+  set($('sync'), p ? `${icon('pause')}同步已暂停` : `<i class="dot ${online || relayOk ? 'on' : ''}"></i>${parts.join(' · ')}`);
   $('sync').title = p ? '点一下恢复' : '点一下暂停全部同步';
   set($('openSettings'), icon('gear'));
 }
@@ -102,7 +108,8 @@ function devSub(d) {
 }
 
 function renderDevices() {
-  const all = [...S.devices, ...S.phones];
+  // 在线的排前面；同一类里按最近在线
+  const all = [...S.devices, ...S.phones].sort((a, b) => (a.state === 'offline') - (b.state === 'offline') || (b.seen || 0) - (a.seen || 0));
   set($('devices'), all.map(d => {
     const on = d.state !== 'offline';
     return `<div class="dev ${on ? 'online' : ''}" data-dropdev="${d.id}">
@@ -118,10 +125,10 @@ function renderDevices() {
         <button class="bad" data-remove="${d.id}">${icon('trash')}${d.kind === 'phone' ? '移除这部手机' : '移除这台电脑'}</button>
       </div>` : ''}
     </div>`;
-  }).join('') + cloudCard() + `<div class="dev add" data-add>
-      <div class="dic">${icon('plus')}</div><b>添加设备</b><span style="font-size:12px">手机扫码，电脑自动发现</span>
-    </div>`);
+  }).join('') + cloudCard());
   $('devHint').textContent = all.length ? '把文件拖到设备上就能发过去' : '';
+  const fresh = (S.nearby || []).length;
+  set($('addBtn'), `${icon('plus')}添加设备${fresh ? `<span class="badge">${fresh}</span>` : ''}`);
 }
 
 function nearHtml(n) {
@@ -259,40 +266,88 @@ function route(f) {
   const to = (f.to || []).map(n => isMe(n) ? '本机' : n);
   const from = isMe(f.from) ? '本机' : f.from;
   if (f.kind === 'info') return '';
-  return `<span class="route">${esc(from || '')}${to.length ? ` ${icon('send')} ${esc(to.join('、'))}` : ''}</span>`;
+  if (f.clip && !to.length) return `${esc(from || '')} → 剪贴板`;
+  return `${esc(from || '')}${to.length ? ' → ' + esc(to.join('、')) : ''}`;
+}
+
+// 动态：按天分组，一条一行；连接、断开这类系统消息缩成一行小字；可以只看手机或小云。
+let feedFilter = 'all';
+function feedGroup(f) {
+  const to = f.to || [], phones = new Set(S.phones.map(p => p.name));
+  if (f.from === '小云' || to.includes('小云')) return 'cloud';
+  if (phones.has(f.from) || to.some(n => phones.has(n))) return 'phone';
+  return 'pc';
+}
+function feedTabs(items) {
+  const has = { phone: items.some(f => f.kind !== 'info' && feedGroup(f) === 'phone'), cloud: items.some(f => f.kind !== 'info' && feedGroup(f) === 'cloud') };
+  if (!has.phone && !has.cloud) { feedFilter = 'all'; return ''; }
+  return `<span class="ftabs">${[['all', '全部'], ['phone', '手机'], ['cloud', '小云']].filter(([k]) => k === 'all' || has[k]).map(([k, l]) => `<button class="${feedFilter === k ? 'on' : ''}" data-ffilter="${k}">${l}</button>`).join('')}</span>`;
+}
+function rowStatus(f) {
+  const pct = f.total > 0 ? Math.min(100, Math.round(f.done * 100 / f.total)) : 0;
+  if (f.status === 'sending') return `<span class="status wait">${f.total ? pct + '%' : '发送中'}</span>`;
+  if (f.status === 'receiving') return `<span class="status wait">${pct}%</span>`;
+  if (f.status === 'failed') return `<span class="status bad">${icon('x')}没成功</span>`;
+  if (f.status === 'waiting') return `<span class="status wait">等手机下载</span>`;
+  if (f.status === 'done') return `<span class="status ok" title="${f.dir === 'out' ? (f.clip ? '已同步' : '已送达') : (f.clip ? '已同步' : '已收到')}">${icon('check')}</span>`;
+  return '';
+}
+function rowTitle(f) {
+  if (f.kind === 'text') return f.text ? `“${esc(f.text.replace(/\s+/g, ' ').slice(0, 80))}”` : '文字';
+  return feedTitle(f);
 }
 
 function renderFeed() {
-  const items = S.feed;
-  $('clearFeed').classList.toggle('hide', items.length === 0);
-  set($('feed'), items.map(f => {
-    const kindIcon = f.kind === 'text' ? 'text' : f.kind === 'image' ? 'image' : f.kind === 'info' ? 'info' : f.files.length > 1 ? 'files' : 'file';
+  const all = S.feed;
+  $('clearFeed').classList.toggle('hide', all.length === 0);
+  set($('feedHint'), feedTabs(all));
+  const items = feedFilter === 'all' ? all : all.filter(f => f.kind !== 'info' && feedGroup(f) === feedFilter);
+  const out = []; let day = '';
+  for (const f of items) {
+    const dl = dayLabel(f.time);
+    if (dl !== day) { day = dl; out.push(`<li class="fday">${dl}</li>`); }
+    if (f.kind === 'info') {
+      out.push(`<li class="finfo"><span>${esc(f.note || '')} · ${hhmm(f.time)}</span><button class="iconbtn" data-del="${f.id}" title="删掉这条">${icon('x')}</button></li>`);
+      continue;
+    }
+    const cloud = feedGroup(f) === 'cloud';
+    const kindIcon = f.kind === 'text' ? 'text' : f.kind === 'image' || f.image ? 'image' : f.files.length + (f.more || 0) > 1 ? 'files' : 'file';
     const anyFile = f.files.some(x => x.exists);
     const busy = f.status === 'sending' || f.status === 'receiving';
     const pct = f.total > 0 ? Math.min(100, f.done * 100 / f.total) : 0;
-    let body = '';
-    if (f.kind === 'text' && f.text) body += `<div class="ftext">${esc(f.text)}</div>`;
-    if (f.image && f.files[0] && f.files[0].exists && !busy) body += `<img class="thumb" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">`;
-    else if (f.files.length && !(f.image && f.files.length === 1 && busy)) body += `<div class="ffiles">${f.files.map((x, i) => `<button class="chip ${x.exists || busy ? '' : 'gone'}" ${x.exists ? `data-open="${f.id}" data-i="${i}"` : 'disabled'} title="${x.exists ? '打开' : '文件已不在'}">${icon('file')}<span>${esc(x.name)}</span><em>${size(x.size)}</em></button>`).join('')}${f.more ? `<span class="chip">还有 ${f.more} 个</span>` : ''}</div>`;
-    if (busy && f.total > 0) body += `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
-    if (f.note && f.kind !== 'info') body += `<div class="fnote ${f.status === 'failed' ? 'bad' : ''}">${esc(f.note)}</div>`;
+    const total = f.total || f.files.reduce((n, x) => n + (x.size || 0), 0);
+    const meta = [];
+    if (f.kind === 'text' && f.chars > 0) meta.push(f.chars + ' 字');
+    else if (total > 0) meta.push(size(total));
+    const r = route(f); if (r) meta.push(r);
+    const names = f.files.map(x => x.name).join('\n');
+    const one = !cloud && f.files.length === 1 && f.files[0].exists && !busy;
+    const titleAttr = esc(f.kind === 'text' ? (f.text || '') : names);
+    const title = cloud ? `<button class="ft link" data-open-cloud title="在小云里查看">${rowTitle(f)}</button>`
+      : one ? `<button class="ft link" data-open="${f.id}" data-i="0" title="打开 ${titleAttr}">${rowTitle(f)}</button>`
+      : `<b class="ft" title="${titleAttr}">${rowTitle(f)}</b>`;
+    let extra = '';
+    if (busy && f.total > 0) extra += `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+    if (f.status === 'failed' && f.note) extra += `<div class="fnote bad">${esc(f.note)}</div>`;
+    const thumb = f.image && f.files[0] && f.files[0].exists && !busy ? `<img class="mini" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">` : '';
     const acts = [];
     if (f.kind === 'text' && f.text) acts.push(`<button class="btn ghost small" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}复制</button>`);
-    if ((f.kind === 'image' || f.kind === 'files' || f.kind === 'send') && anyFile && !busy) {
+    if (!cloud && (f.kind === 'image' || f.kind === 'files' || f.kind === 'send') && anyFile && !busy) {
       if (f.kind !== 'send') acts.push(`<button class="btn ghost small" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}复制</button>`);
       acts.push(`<button class="btn ghost small" data-reveal="${f.id}" title="在文件夹中显示">${icon('folder')}位置</button>`);
     }
     if (f.status === 'failed' && f.dir === 'out') acts.push(`<button class="btn ghost small" data-retry="${f.id}">${icon('refresh')}重试</button>`);
-    acts.push(`<button class="iconbtn" style="width:28px;height:28px" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button>`);
-    return `<li class="fi">
-      <div class="fic">${icon(kindIcon)}${f.kind !== 'info' ? `<span class="dir ${f.dir}">${icon(f.dir === 'in' ? 'down' : 'up')}</span>` : ''}</div>
-      <div class="fb">
-        <div class="fh"><b>${feedTitle(f)}</b>${route(f)}<span>· ${when(f.time)}</span>${feedStatus(f)}</div>
-        ${body}
-      </div>
+    acts.push(`<button class="iconbtn" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button>`);
+    out.push(`<li class="fi">
+      <div class="fic">${icon(kindIcon)}</div>
+      <div class="fb"><div class="fl">${title}<span class="fm">${meta.join(' · ')}</span></div>${extra}</div>
       <div class="fa">${acts.join('')}</div>
-    </li>`;
-  }).join(''));
+      ${thumb}
+      <span class="fst">${rowStatus(f)}</span>
+      <span class="fwhen">${hhmm(f.time)}</span>
+    </li>`);
+  }
+  set($('feed'), out.join(''));
 }
 
 function sw(key, on) { return `<label class="switch"><input type="checkbox" data-set="${key}" ${on ? 'checked' : ''}><span></span></label>`; }
@@ -558,6 +613,7 @@ document.addEventListener('click', async e => {
   const d = t.dataset;
   if (d.openHistory !== undefined) { openMenu = null; openHistory(d.openHistory); return; }
   if (d.openCloud !== undefined) { openCloud(); return; }
+  if (d.ffilter) { feedFilter = d.ffilter; renderFeed(); return; }
   if (d.cloudClose !== undefined) { closeCloud(); return; }
   if (d.cloudDown !== undefined) { await act('cloud-download', { id: d.cloudDown }, '开始下载，完成后在“动态”里'); return; }
   if (d.cloudDel !== undefined) { if (confirm('从小云删掉这个文件？\n\n组里的电脑和链接都再也下载不了。')) { await act('cloud-delete', { id: d.cloudDel }, '已删除'); loadCloud(); } return; }
