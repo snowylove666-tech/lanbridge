@@ -69,3 +69,4 @@ textarea.input { min-height: 96px; font-size: 16px; }
 .hfoot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line2); font-size: 13px; color: var(--muted); }
 .hfoot select { font: inherit; font-size: 13px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
 .hfoot .btn { margin-left: auto; }
+.quickhint { margin-top: 8px; text-align: center; font-size: 13px; color: var(--accent); font-weight: 600; }

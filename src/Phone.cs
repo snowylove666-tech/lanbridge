@@ -23,21 +23,24 @@ sealed class PhoneHub {
  public PhoneHub(App app) { this.app = app; RefreshPair(); MergeOld(); }
 
  void MergeOld() {
-  if (C.phonesMerged) return;
+  if (C.phonesMergeVer >= 2) return;
   var moves = new List<(List<string> from, string to)>();
   lock (Gate) {
    foreach (var g in C.phones.GroupBy(x => x.name).Where(g => g.Count() > 1).ToList()) {
     var keep = g.OrderByDescending(x => x.seen).First();
-    var drop = g.Where(x => x != keep).Select(x => x.id).ToList();
-    C.phones.RemoveAll(x => drop.Contains(x.id));
-    moves.Add((drop, keep.id));
+    var drop = g.Where(x => x != keep).ToList();
+    foreach (var o in drop) Absorb(keep, o);   // 并掉的卡片的授权也留着：那些地方打开的网页不用重新扫码
+    var ids = drop.Select(x => x.id).ToList();
+    C.phones.RemoveAll(x => ids.Contains(x.id));
+    moves.Add((ids, keep.id));
    }
-   C.phonesMerged = true; app.Save();
+   C.phonesMerged = true; C.phonesMergeVer = 2; app.Save();
   }
   foreach (var m in moves) app.History.Merge(m.from, m.to);
  }
 
  public void RefreshPair() { lock (Gate) { PairSecret = Crypto.Token(10); PairUntil = Util.Ms() + 15 * 60 * 1000; } app.Changes.Bump(); }
+
  public void ClipChanged() { try { app.ClipLog.Add(app.Hub.Latest, app.Hub.LatestPaths); } catch { } changes.Bump(); }
 
  public object HistoryClear(Phone p) { lock (Gate) { p.histFrom = Util.Ms(); app.Save(); } return new { ok = true }; }
@@ -51,16 +54,19 @@ sealed class PhoneHub {
   string nm = Util.Clip(string.IsNullOrWhiteSpace(name) ? "我的 iPhone" : name.Trim(), 30);
   Phone p; List<string> merged;
   lock (Gate) {
-   // 同名、现在不在线的手机多半是同一部手机以前扫的码（换了浏览器、换了地址、删了主屏幕图标）：
-   // 沿用最近那张卡片（换新授权，旧授权作废），其余同名离线的并进来，免得设备越扫越多。
+   // 同名的就是同一部手机：它从 Safari、主屏幕图标、微信、家里地址、中转地址打开时各拿一份授权，
+   // 都记在同一张卡片上（以前每次算一部新手机，设备越扫越多）。真有两部同名的，在手机连接页上改个名字。
    long now = Util.Ms();
-   var same = C.phones.Where(x => x.name == nm && now - x.seen > 40000).OrderByDescending(x => x.seen).ToList();
+   var same = C.phones.Where(x => x.name == nm).OrderByDescending(x => x.seen).ToList();
    p = same.FirstOrDefault();
    merged = same.Skip(1).Select(x => x.id).ToList();
    if (p != null) {
+    foreach (var o in same.Skip(1)) Absorb(p, o);
     C.phones.RemoveAll(x => merged.Contains(x.id));
-    inbox.RemoveAll(x => merged.Contains(x.phoneId));
-    p.hash = Crypto.Sha(token); p.seen = now; p.init = false; p.baseline = null; p.lastClip = null;
+    foreach (var x in inbox) if (merged.Contains(x.phoneId)) x.phoneId = p.id;
+    p.hashes ??= new List<string>(); p.hashes.Add(Crypto.Sha(token));
+    while (p.hashes.Count > 8) p.hashes.RemoveAt(0);
+    p.seen = now;
    } else {
     p = new Phone { id = Crypto.Token(6), name = nm, hash = Crypto.Sha(token), added = now, seen = now };
     C.phones.Add(p); while (C.phones.Count > 20) C.phones.RemoveAt(0);
@@ -70,6 +76,12 @@ sealed class PhoneHub {
   if (merged.Count > 0) app.History.Merge(merged, p.id);
   app.Changes.Bump();
   return p;
+ }
+ static void Absorb(Phone keep, Phone o) {
+  keep.hashes ??= new List<string>();
+  if (o.hash != null) keep.hashes.Add(o.hash);
+  if (o.hashes != null) keep.hashes.AddRange(o.hashes);
+  keep.seen = Math.Max(keep.seen, o.seen);
  }
 
  public object PairIn(Dictionary<string, object> d) {
@@ -119,7 +131,7 @@ sealed class PhoneHub {
   string h = Crypto.Sha(t);
   Phone p; bool bump;
   lock (Gate) {
-   p = C.phones.FirstOrDefault(x => x.hash == h) ?? throw new ApiError(401, "这部手机已被电脑移除，请重新扫码连接");
+   p = C.phones.FirstOrDefault(x => x.hash == h || (x.hashes != null && x.hashes.Contains(h))) ?? throw new ApiError(401, "这部手机已被电脑移除，请重新扫码连接");
    bump = Util.Ms() - p.seen > 20000; p.seen = Util.Ms();
   }
   if (bump) app.Changes.Bump();

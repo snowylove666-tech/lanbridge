@@ -100,7 +100,7 @@ function renderPending() {
 }
 
 function devSub(d) {
-  if (d.kind === 'phone') return d.state === 'online' ? '轻桥网页开着' : (d.seen ? '上次 ' + when(d.seen) : '已连接');
+  if (d.kind === 'phone') return d.state === 'online' ? '手机上正开着轻桥' : '已配对 · ' + (d.seen ? '上次打开 ' + when(d.seen) : '还没打开过');
   if (d.state === 'online') return d.paused ? '对方暂停了同步' : d.route === 'relay' ? '在线 · 不在同一个网络（经中转）' : '在线 · ' + (d.addr || '');
   if (d.state === 'reverse') return '在线（只能由它连过来）';
   if (d.error) return d.error;

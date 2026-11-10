@@ -15,6 +15,8 @@ public sealed class Member {
 /// <summary>连过这台电脑的手机（Safari 网页 / 快捷指令）。只存令牌的哈希。</summary>
 public sealed class Phone {
  public string id, name, hash; public long added, seen;
+ /// <summary>同一部手机会从好几个地方打开轻桥（Safari、主屏幕图标、微信里、家里地址和中转地址），各有各的授权；都记在这一张卡片上。</summary>
+ public List<string> hashes = new List<string>();
  /// <summary>手机网页“之前的”：这个时间以前的不给它看（点过清空）；超过多少天的自动不给（0 = 一直留）。</summary>
  public long histFrom; public int histDays = 7;
  public bool init; public string baseline, lastClip;
@@ -37,7 +39,7 @@ public sealed class Config {
  /// <summary>这台电脑开着临时中转（自己当中转 + Cloudflare 临时隧道）。</summary>
  public bool relayTemp;
  /// <summary>2.2.4 起同名手机只留一张卡片：老数据里已经扫出来的重复卡片在第一次启动时并一次。</summary>
- public bool phonesMerged;
+ public bool phonesMerged; public int phonesMergeVer;
  public string receiveFolder;
  public List<Member> members = new List<Member>();
  public List<string> blocked = new List<string>();

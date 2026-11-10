@@ -108,7 +108,9 @@ function clipCard() {
   let body;
   if (!c) body = `<div class="empty">在电脑上复制点什么，这里马上就会出现。</div>`;
   else if (c.kind === 'text') body = `<div class="clip-text" id="clipText">${esc(c.text)}</div>
-     <div class="actions"><button class="btn primary big" id="copy">${icon('copy')}复制到手机</button></div>`;
+     <div class="actions"><button class="btn primary big" id="copy">${icon('copy')}${S.clip.id === copiedId ? '已复制 · 再复制一次' : '复制到手机'}</button></div>
+     ${quickReady() ? '<div class="quickhint">电脑刚复制的 · 点屏幕任意空白处也能复制</div>' : ''}
+     <label class="check"><span class="switch"><input type="checkbox" id="quick" ${quickOn() ? 'checked' : ''}><span></span></span>电脑有新文字时，点一下屏幕任意处就复制</label>`;
   else if (c.kind === 'image' && c.items[0] && c.items[0].ok) {
     const u = fileUrl(`ev=${c.id}&i=0`);
     body = `<img class="clip-img" src="${u}&view=1" alt="">
@@ -213,6 +215,13 @@ function inboxCard() {
   return `<div class="card"><div class="ct">${icon('download')}电脑发来的文件</div>${S.inbox.map(x => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)} · ${when(x.time)}${x.got ? ' · 已下载' : ''}</div></div><a class="btn ${x.got ? 'line' : 'soft'} small" href="${fileUrl('inbox=' + x.id)}" download="${esc(x.name)}">${icon('download')}下载</a></div>`).join('')}</div>`;
 }
 
+const inWeChat = () => /MicroMessenger/i.test(navigator.userAgent);
+// iPhone 上“添加到主屏幕”藏在分享菜单里；新系统的 Safari 把分享按钮收进了地址栏旁的 ··· 里。
+function homeHow() {
+  if (inWeChat()) return '先点右上角 ··· → 在默认浏览器中打开，到 Safari 里再放。';
+  if (isIOS()) return '在 Safari 里：点底部（或地址栏旁 <b>···</b> 里）的<b>分享</b>按钮（方框加向上箭头）→ 往下翻 → <b>添加到主屏幕</b>。列表里没有的话，翻到最下面点“编辑操作”把它加上。';
+  return '点浏览器菜单 → “添加到主屏幕”。';
+}
 const standalone = () => window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
@@ -227,6 +236,7 @@ function render() {
   const tip = isIOS() && !standalone() && localStorage.getItem(K + 'tip') !== '1';
   $('app').innerHTML = `
     ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
+    ${inWeChat() ? '<div class="banner">现在是在微信里打开的：微信里不能放到主屏幕，复制也常被拦。请点右上角 <b>···</b> → <b>在默认浏览器中打开</b>（Safari），以后都从那边用。</div>' : ''}
     ${viaRelay && localStorage.getItem(K + 'moved') === '1' ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。<b>请重新放一次到主屏幕：</b>点 Safari 底部的“分享” → “添加到主屏幕”，再把主屏幕上旧的“轻桥”图标删掉（旧图标只在家里的 Wi-Fi 能用）。${isIOS() ? '设置过“轻点背面”的，点下面“设置轻点背面”，按第 1 步复制新地址替换快捷指令里的旧地址。' : ''}</div>` : ''}
     <div id="clipBox">${clipCard()}</div>
     ${sendCard()}
@@ -234,7 +244,7 @@ function render() {
     ${inboxCard()}
     ${cloudCard()}
     ${isIOS() && localStorage.getItem(K + 'tapTip') !== '1' ? `<div class="card tipcard"><div class="ct">${icon('hand')}更省事：轻点手机背面<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>设置一次（约 1 分钟），以后手机上复制完<b>轻点背面两下</b>就发到电脑，不用打开这个网页；电脑上复制的也能这样取回手机。还可以设成<b>离开微信等 App 时自动发送</b>，连背面都不用点。<div class="actions" style="margin-top:10px"><button class="btn soft" id="guide2">${icon('hand')}看怎么设置</button></div></div>` : ''}
-    ${tip ? `<div class="card" style="font-size:14px"><div class="ct">${icon('plus')}放到主屏幕<button class="btn ghost small" id="tipX" style="margin-left:auto">知道了</button></div>点 Safari 底部的“分享”按钮 → “添加到主屏幕”。以后像 App 一样一点就开，不用再扫码。</div>` : ''}
+    ${tip ? `<div class="card" style="font-size:14px"><div class="ct">${icon('plus')}放到主屏幕<button class="btn ghost small" id="tipX" style="margin-left:auto">知道了</button></div>${homeHow()}以后像 App 一样一点就开，不用再扫码。</div>` : ''}
     <div class="links">
       ${!viaRelay && S.relay ? '<button id="roam">离开这个 Wi-Fi 也能用</button>' : ''}
       ${isIOS() ? '<button id="guide">设置“轻点背面”同步文字</button>' : ''}
@@ -244,7 +254,22 @@ function render() {
   bind();
 }
 
+// 电脑上新复制了文字：回到这个网页后点一下屏幕任意处就进手机剪贴板（iPhone 不让网页不经点按就写剪贴板，这是最省的一步）。
+let copiedId = localStorage.getItem(K + 'copied') || '';
+const quickOn = () => localStorage.getItem(K + 'quick') !== '0';
+const quickReady = () => quickOn() && S && S.clip && S.clip.kind === 'text' && !S.clip.fromMe && S.clip.id !== copiedId;
+function markCopied() { copiedId = S.clip.id; localStorage.setItem(K + 'copied', copiedId); }
+document.addEventListener('click', e => {
+  if (!quickReady() || view !== 'main') return;
+  if (e.target.closest('button, a, input, textarea, select, label')) return;
+  const ok = copyText(S.clip.text);
+  if (ok) { markCopied(); render(); }
+  toast(ok ? '已复制电脑上的文字，可以去粘贴了' : '复制没成功，点“复制到手机”再试', !ok);
+});
+
 function bindClip() {
+  if ($('quick')) $('quick').onchange = e => { localStorage.setItem(K + 'quick', e.target.checked ? '1' : '0'); render(); };
+  const c0 = $('copy'); if (c0) c0.addEventListener('click', () => { if (S.clip && S.clip.kind === 'text') { markCopied(); setTimeout(render, 50); } });
   const c = $('copy');
   if (c) c.onclick = () => { const ok = copyText(S.clip.text); toast(ok ? '已复制，可以去粘贴了' : '复制没成功，长按上面的文字手动复制', !ok); };
 }
