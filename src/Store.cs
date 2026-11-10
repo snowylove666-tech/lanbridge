@@ -15,6 +15,8 @@ public sealed class Member {
 /// <summary>连过这台电脑的手机（Safari 网页 / 快捷指令）。只存令牌的哈希。</summary>
 public sealed class Phone {
  public string id, name, hash; public long added, seen;
+ /// <summary>手机网页“之前的”：这个时间以前的不给它看（点过清空）；超过多少天的自动不给（0 = 一直留）。</summary>
+ public long histFrom; public int histDays = 7;
  public bool init; public string baseline, lastClip;
  /// <summary>快捷指令最后一次发来的图片：同一张图再来（比如切 App 自动运行）就不重复发。</summary>
  public string imageHash;
@@ -28,6 +30,8 @@ public sealed class Config {
  public bool syncText = true, syncFiles = true, notify = true, paused = false, autostart = true, sendTo = true;
  public bool shellApplied, welcomed;
  public int autoLimitMB = 200;
+ /// <summary>电脑“动态”里的记录留多少天；0 = 一直留。</summary>
+ public int feedDays = 30;
  /// <summary>中转地址：null 用内置的，"" 表示关掉。relayAt 是改动时间，组内以最新的为准。</summary>
  public string relay, relayKey; public long relayAt;
  /// <summary>这台电脑开着临时中转（自己当中转 + Cloudflare 临时隧道）。</summary>

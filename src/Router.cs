@@ -92,6 +92,9 @@ sealed class Router {
   switch (p) {
    case "/api/phone/state": res.Json(ph.State(phone, long.TryParse(q.Q("rev"), out var r) ? r : 0)); return;
    case "/api/phone/cloud": res.Json(app.Cloud.List()); return;
+   case "/api/phone/history": res.Json(app.ClipLog.For(phone)); return;
+   case "/api/phone/history-clear" when q.Method == "POST": res.Json(ph.HistoryClear(phone)); return;
+   case "/api/phone/history-days" when q.Method == "POST": res.Json(ph.HistoryDays(phone, q.Json())); return;
    case "/api/phone/text" when q.Method == "POST": res.Json(ph.TextIn(phone, q.Json())); return;
    case "/api/phone/upload" when q.Method == "POST": res.Json(ph.UploadIn(phone, q)); return;
    case "/api/phone/file": ph.Download(phone, q, res); return;
@@ -189,6 +192,7 @@ sealed class Router {
    if (d.Flag("syncText") is bool a) C.syncText = a;
    if (d.Flag("syncFiles") is bool b) C.syncFiles = b;
    if (d.Flag("notify") is bool c) C.notify = c;
+   if (d.ContainsKey("feedDays")) { int fd = (int)d.Num("feedDays", 30); C.feedDays = fd == 0 || fd == 7 || fd == 30 || fd == 90 ? fd : 30; app.Feed.Prune(); }
    if (d.Flag("paused") is bool e) C.paused = e;
    if (d.Flag("autostart") is bool f) { C.autostart = f; shell = true; }
    if (d.Flag("sendTo") is bool g) { C.sendTo = g; shell = true; }
@@ -305,14 +309,14 @@ sealed class Router {
    return new {
     rev = app.Changes.Rev, version = Program.Version,
     me = new { id = C.deviceId, name = C.deviceName, form = Shell.Form, port = app.Opt.Port, ip = addrs.FirstOrDefault()?.Ip.ToString() ?? "127.0.0.1", mdns = app.MdnsName, addrs = addrs.Select(a => new { ip = a.Ip.ToString(), name = a.Name, good = a.Score >= 0 }).ToList() },
-    settings = new { C.syncText, C.syncFiles, C.notify, C.paused, C.autostart, C.sendTo, C.receiveFolder, C.autoLimitMB, noShell = app.Opt.NoShell },
+    settings = new { C.syncText, C.syncFiles, C.notify, C.paused, C.autostart, C.sendTo, C.receiveFolder, C.autoLimitMB, C.feedDays, noShell = app.Opt.NoShell },
     relay = new { url = app.Relay.Base, builtIn = app.Relay.Builtin, custom = !C.relayTemp && C.relay != null && C.relay != app.Relay.Builtin, state = app.Relay.State, error = app.Relay.Error, code = app.Relay.CodeActive ? app.Relay.Code : null, codeText = app.Relay.CodeText, codeUntil = app.Relay.CodeUntil, maxMB = app.Relay.MaxBody >> 20,
      mode = C.relayTemp ? "temp" : C.relay == null ? "off" : C.relay == app.Relay.Builtin ? "builtin" : "custom",
      temp = new { on = C.relayTemp, state = app.Temp.State, error = app.Temp.Error, url = app.Temp.Url, progress = app.Temp.Progress, tool = app.Temp.ToolReady, since = app.Temp.Since } },
     devices, phones,
     nearby = app.Hub.Near.Values.OrderBy(n => n.name).Select(n => new { n.id, n.name, form = n.form ?? "desktop", n.ip, n.port, n.state, n.code, n.error }).ToList(),
     requests = app.Hub.Requests.Where(r => r.status == "pending" && r.until > now).Select(r => new { r.id, r.kind, r.name, form = r.form ?? (r.kind == "phone" ? "phone" : "desktop"), r.code, r.ip, left = (r.until - now) / 1000 }).ToList(),
-    feed = app.Feed.Snapshot().Take(80).Select(f => new {
+    feedTotal = app.Feed.Count, feed = app.Feed.Snapshot().Take(300).Select(f => new {
      f.id, f.kind, f.dir, f.from, f.to, text = Util.Clip(f.text, 800), chars = f.text?.Length ?? 0, f.time, f.status, f.note, f.total, f.done, f.image, f.clip,
      files = f.files.Take(12).Select(x => new { x.name, x.size, exists = x.path != null && File.Exists(x.path) }).ToList(), more = Math.Max(0, f.files.Count - 12)
     }).ToList(),

@@ -53,3 +53,19 @@ textarea.input { min-height: 96px; font-size: 16px; }
 .guide .step0 .kv code { background: var(--panel); }
 .guide .sub { margin: 14px 0 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .guide .warn { margin-top: 4px; font-size: 13px; color: var(--warn); line-height: 1.5; }
+
+/* 2.2.5 之前的 */
+.htabs { margin-left: auto; display: inline-flex; gap: 2px; background: var(--line2); border-radius: 8px; padding: 2px; font-weight: 400; }
+.htabs button { border: 0; background: transparent; font: inherit; font-size: 12.5px; color: var(--muted); padding: 4px 10px; border-radius: 6px; }
+.htabs button.on { background: var(--panel); color: var(--ink); }
+.hrow { display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit; padding: 10px 0; border-top: 1px solid var(--line2); }
+.hrow:active { background: var(--panel2); }
+.hrow .ht { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14.5px; line-height: 1.45; word-break: break-word; white-space: pre-wrap; }
+.hrow .hm { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.hgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 0; border-top: 1px solid var(--line2); }
+.himg { position: relative; display: grid; place-items: center; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--line2); border: 1px solid var(--line2); color: var(--muted); font-size: 12px; text-decoration: none; }
+.himg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.himg em { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-style: normal; font-size: 11px; color: #fff; background: rgba(0,0,0,.45); }
+.hfoot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line2); font-size: 13px; color: var(--muted); }
+.hfoot select { font: inherit; font-size: 13px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+.hfoot .btn { margin-left: auto; }

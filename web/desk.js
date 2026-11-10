@@ -56,7 +56,7 @@ function render() {
   if (addOpen && remoteOpen && S.relay.url && S.relay.state === 'ok' && !S.relay.code && !remoteCodeAsked) { remoteCodeAsked = true; act('remote-code', {}); }
   if (histOpen && S.history.rev !== histRev) loadHistory();
   if (cloudOpen && (S.cloud.rev !== cloudRev || S.cloud.ready !== cloudReady)) loadCloud();
-  if (S.pair.until - Date.now() < 60000 && !render.refreshing) { render.refreshing = true; act('pair-refresh').finally(() => render.refreshing = false); }
+  if (S.pair.until - Date.now() < 60000 && !render.refreshing) { render.refreshing = true; act('pair-refresh', {}).finally(() => render.refreshing = false); }
 }
 
 function renderTop() {
@@ -270,18 +270,26 @@ function route(f) {
   return `${esc(from || '')}${to.length ? ' → ' + esc(to.join('、')) : ''}`;
 }
 
-// 动态：按天分组，一条一行；连接、断开这类系统消息缩成一行小字；可以只看手机或小云。
+// 动态：按天分组；可以按类型看（文字 / 图片 / 文件 / 手机 / 小云）；图片可以排成小图或中图。
 let feedFilter = 'all';
+let feedView = 'list';
+try { feedView = localStorage.getItem('lb.feedView') || 'list'; } catch { }
 function feedGroup(f) {
   const to = f.to || [], phones = new Set(S.phones.map(p => p.name));
   if (f.from === '小云' || to.includes('小云')) return 'cloud';
   if (phones.has(f.from) || to.some(n => phones.has(n))) return 'phone';
   return 'pc';
 }
+const isPic = f => !!(f.image || f.kind === 'image');
+function feedType(f) { return f.kind === 'text' ? 'text' : isPic(f) ? 'image' : 'file'; }
+function feedMatch(f, k) { return k === 'all' || (f.kind !== 'info' && (k === 'phone' || k === 'cloud' ? feedGroup(f) === k : feedType(f) === k)); }
 function feedTabs(items) {
-  const has = { phone: items.some(f => f.kind !== 'info' && feedGroup(f) === 'phone'), cloud: items.some(f => f.kind !== 'info' && feedGroup(f) === 'cloud') };
-  if (!has.phone && !has.cloud) { feedFilter = 'all'; return ''; }
-  return `<span class="ftabs">${[['all', '全部'], ['phone', '手机'], ['cloud', '小云']].filter(([k]) => k === 'all' || has[k]).map(([k, l]) => `<button class="${feedFilter === k ? 'on' : ''}" data-ffilter="${k}">${l}</button>`).join('')}</span>`;
+  const defs = [['all', '全部'], ['text', '文字'], ['image', '图片'], ['file', '文件'], ['phone', '手机'], ['cloud', '小云']];
+  const shown = defs.filter(([k]) => k === 'all' || items.some(f => feedMatch(f, k)));
+  if (!shown.some(([k]) => k === feedFilter)) feedFilter = 'all';
+  const tabs = shown.length > 2 ? `<span class="ftabs">${shown.map(([k, l]) => `<button class="${feedFilter === k ? 'on' : ''}" data-ffilter="${k}">${l}</button>`).join('')}</span>` : '';
+  const views = items.some(isPic) ? `<span class="ftabs fviews">${[['list', 'list', '列表：一行一条'], ['small', 'grid', '小图'], ['medium', 'image', '中图']].map(([k, ic, l]) => `<button class="${feedView === k ? 'on' : ''}" data-fview="${k}" title="${l}">${icon(ic)}</button>`).join('')}</span>` : '';
+  return tabs + views;
 }
 function rowStatus(f) {
   const pct = f.total > 0 ? Math.min(100, Math.round(f.done * 100 / f.total)) : 0;
@@ -296,22 +304,34 @@ function rowTitle(f) {
   if (f.kind === 'text') return f.text ? `“${esc(f.text.replace(/\s+/g, ' ').slice(0, 80))}”` : '文字';
   return feedTitle(f);
 }
+const picReady = f => isPic(f) && f.files[0] && f.files[0].exists && f.status !== 'sending' && f.status !== 'receiving' && feedGroup(f) !== 'cloud';
+function tileHtml(f) {
+  const r = route(f);
+  return `<figure class="tile" title="${esc(f.files[0].name)}${r ? '\n' + r.replace(/<[^>]+>/g, '') : ''}">
+    <img loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">
+    <figcaption><span>${esc(f.files[0].name)}</span><em>${hhmm(f.time)}</em></figcaption>
+    <div class="tacts"><button class="iconbtn" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}</button><button class="iconbtn" data-reveal="${f.id}" title="在文件夹中显示">${icon('folder')}</button><button class="iconbtn" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button></div>
+  </figure>`;
+}
 
 function renderFeed() {
   const all = S.feed;
   $('clearFeed').classList.toggle('hide', all.length === 0);
   set($('feedHint'), feedTabs(all));
-  const items = feedFilter === 'all' ? all : all.filter(f => f.kind !== 'info' && feedGroup(f) === feedFilter);
-  const out = []; let day = '';
+  const items = all.filter(f => feedMatch(f, feedFilter));
+  const out = []; let day = '', gal = null;
+  const flush = () => { if (gal) { out.push(`<li class="fgal ${feedView}">${gal.join('')}</li>`); gal = null; } };
   for (const f of items) {
     const dl = dayLabel(f.time);
-    if (dl !== day) { day = dl; out.push(`<li class="fday">${dl}</li>`); }
+    if (dl !== day) { flush(); day = dl; out.push(`<li class="fday">${dl}</li>`); }
+    if (feedView !== 'list' && picReady(f)) { (gal = gal || []).push(tileHtml(f)); continue; }
+    flush();
     if (f.kind === 'info') {
       out.push(`<li class="finfo"><span>${esc(f.note || '')} · ${hhmm(f.time)}</span><button class="iconbtn" data-del="${f.id}" title="删掉这条">${icon('x')}</button></li>`);
       continue;
     }
     const cloud = feedGroup(f) === 'cloud';
-    const kindIcon = f.kind === 'text' ? 'text' : f.kind === 'image' || f.image ? 'image' : f.files.length + (f.more || 0) > 1 ? 'files' : 'file';
+    const kindIcon = f.kind === 'text' ? 'text' : isPic(f) ? 'image' : f.files.length + (f.more || 0) > 1 ? 'files' : 'file';
     const anyFile = f.files.some(x => x.exists);
     const busy = f.status === 'sending' || f.status === 'receiving';
     const pct = f.total > 0 ? Math.min(100, f.done * 100 / f.total) : 0;
@@ -325,11 +345,12 @@ function renderFeed() {
     const titleAttr = esc(f.kind === 'text' ? (f.text || '') : names);
     const title = cloud ? `<button class="ft link" data-open-cloud title="在小云里查看">${rowTitle(f)}</button>`
       : one ? `<button class="ft link" data-open="${f.id}" data-i="0" title="打开 ${titleAttr}">${rowTitle(f)}</button>`
+      : f.kind === 'text' && f.text ? `<button class="ft link" data-recopy="${f.id}" title="点一下重新放进剪贴板\n\n${titleAttr}">${rowTitle(f)}</button>`
       : `<b class="ft" title="${titleAttr}">${rowTitle(f)}</b>`;
     let extra = '';
     if (busy && f.total > 0) extra += `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
     if (f.status === 'failed' && f.note) extra += `<div class="fnote bad">${esc(f.note)}</div>`;
-    const thumb = f.image && f.files[0] && f.files[0].exists && !busy ? `<img class="mini" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">` : '';
+    const thumb = picReady(f) ? `<img class="mini" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">` : '';
     const acts = [];
     if (f.kind === 'text' && f.text) acts.push(`<button class="btn ghost small" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}复制</button>`);
     if (!cloud && (f.kind === 'image' || f.kind === 'files' || f.kind === 'send') && anyFile && !busy) {
@@ -347,8 +368,14 @@ function renderFeed() {
       <span class="fwhen">${hhmm(f.time)}</span>
     </li>`);
   }
+  flush();
+  if (all.length) {
+    const days = S.settings.feedDays, total = S.feedTotal || all.length;
+    out.push(`<li class="ffoot">记录保留 <select id="feedDays">${[[7, '7 天'], [30, '30 天'], [90, '90 天'], [0, '一直留着']].map(([v, l]) => `<option value="${v}" ${days === v ? 'selected' : ''}>${l}</option>`).join('')}</select><span>共 ${total} 条${total > all.length ? `，这里显示最近 ${all.length} 条` : ''} · 只删记录，不删收到的文件</span></li>`);
+  }
   set($('feed'), out.join(''));
 }
+document.addEventListener('change', e => { if (e.target.id === 'feedDays') act('settings', { feedDays: +e.target.value }, '已改'); });
 
 function sw(key, on) { return `<label class="switch"><input type="checkbox" data-set="${key}" ${on ? 'checked' : ''}><span></span></label>`; }
 
@@ -614,6 +641,7 @@ document.addEventListener('click', async e => {
   if (d.openHistory !== undefined) { openMenu = null; openHistory(d.openHistory); return; }
   if (d.openCloud !== undefined) { openCloud(); return; }
   if (d.ffilter) { feedFilter = d.ffilter; renderFeed(); return; }
+  if (d.fview) { feedView = d.fview; try { localStorage.setItem('lb.feedView', feedView); } catch { } renderFeed(); return; }
   if (d.cloudClose !== undefined) { closeCloud(); return; }
   if (d.cloudDown !== undefined) { await act('cloud-download', { id: d.cloudDown }, '开始下载，完成后在“动态”里'); return; }
   if (d.cloudDel !== undefined) { if (confirm('从小云删掉这个文件？\n\n组里的电脑和链接都再也下载不了。')) { await act('cloud-delete', { id: d.cloudDel }, '已删除'); loadCloud(); } return; }

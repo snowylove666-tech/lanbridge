@@ -91,7 +91,7 @@ async function loop() {
       S = await r.json(); rev = S.rev; first = false;
       if (!viaRelay && S.relay) { alive = false; location.replace(S.relay + '#t=' + encodeURIComponent(token) + '&moved=1'); return; }
       render();
-      refreshCloud();
+      refreshCloud(); refreshHist();
     } catch { setConn('连不上电脑', false); await sleep(2000); }
   }
 }
@@ -141,6 +141,54 @@ function upsHtml(cloud) {
   return uploads.filter(u => !!u.cloud === !!cloud).map(u => `<div class="up"><div class="row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${esc(u.name)}</span><span>${u.err ? '<span style="color:var(--bad)">' + esc(u.err) + '</span>' : u.done ? (u.cloud ? '✓ 电脑正在放到小云' : '✓ 已发到电脑') : Math.round(u.p * 100) + '%'}</span></div>${u.done || u.err ? '' : `<div class="bar"><i style="width:${(u.p * 100).toFixed(1)}%"></i></div>`}</div>`).join('');
 }
 
+// 之前的：电脑剪贴板的历史（文字点一下复制，图片点开保存）。可以清空，也可以设多少天自动清理。
+let hist = null, histKey = null, histTab = 'all', histAll = false;
+async function refreshHist(force) {
+  const k = S && S.hist; if (k === undefined) return;
+  if (!force && k === histKey) return;
+  histKey = k;
+  try { hist = await call('/api/phone/history'); render(); } catch { }
+}
+function histCard() {
+  if (!hist) return '';
+  const cur = S.clip && S.clip.id;
+  const list = hist.items.filter(x => x.id !== cur);
+  const isImg = x => x.kind === 'image' && x.files[0];
+  const texts = list.filter(x => x.kind === 'text'), imgs = list.filter(isImg), files = list.filter(x => x.kind !== 'text' && !isImg(x));
+  const tabs = [['all', '全部'], ['text', '文字'], ['image', '图片'], ['file', '文件']].filter(([k]) => k === 'all' || (k === 'text' ? texts : k === 'image' ? imgs : files).length);
+  if (!tabs.some(([k]) => k === histTab)) histTab = 'all';
+  let shown = histTab === 'all' ? list : histTab === 'text' ? texts : histTab === 'image' ? imgs : files;
+  const more = !histAll && shown.length > 12; if (more) shown = shown.slice(0, 12);
+  const out = []; let grid = null;
+  const flush = () => { if (grid) { out.push(`<div class="hgrid">${grid.join('')}</div>`); grid = null; } };
+  for (const x of shown) {
+    if (isImg(x)) {
+      const u = fileUrl(`log=${x.id}&i=0`);
+      (grid = grid || []).push(x.files[0].ok ? `<a class="himg" href="${u}&view=1" target="_blank" rel="noopener"><img loading="lazy" src="${u}&view=1" alt=""><em>${when(x.time)}</em></a>` : `<span class="himg gone">已不在<em>${when(x.time)}</em></span>`);
+      continue;
+    }
+    flush();
+    if (x.kind === 'text') out.push(`<button class="hrow" data-hcopy="${x.id}"><span class="ht">${esc((x.text || '').slice(0, 300))}</span><span class="hm">${when(x.time)} · 点一下复制</span></button>`);
+    else out.push(x.files.map((f, i) => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(f.name)}</div><div class="fs">${size(f.size)} · ${when(x.time)}</div></div>${f.ok ? `<a class="btn soft small" href="${fileUrl(`log=${x.id}&i=${i}`)}" download="${esc(f.name)}">${icon('download')}下载</a>` : '<span class="muted">已不在</span>'}</div>`).join(''));
+  }
+  flush();
+  return `<div class="card"><div class="ct">${icon('text')}之前的${tabs.length > 2 ? `<span class="htabs">${tabs.map(([k, l]) => `<button class="${histTab === k ? 'on' : ''}" data-htab="${k}">${l}</button>`).join('')}</span>` : ''}</div>
+    ${list.length ? out.join('') : '<div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div>'}
+    ${more ? '<button class="btn line" id="histMore" style="width:100%;margin-top:10px">看更多</button>' : ''}
+    <div class="hfoot">自动清理 <select id="histDays">${[[1, '1 天'], [7, '7 天'], [30, '30 天'], [0, '不清理']].map(([v, l]) => `<option value="${v}" ${hist.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${list.length ? '<button class="btn ghost small" id="histClear">清空</button>' : ''}</div>
+  </div>`;
+}
+function bindHist() {
+  document.querySelectorAll('[data-hcopy]').forEach(b => b.onclick = () => { const x = hist.items.find(i => i.id === b.dataset.hcopy); const ok = x && copyText(x.text); toast(ok ? '已复制，可以去粘贴了' : '复制没成功，长按文字手动复制', !ok); });
+  document.querySelectorAll('[data-htab]').forEach(b => b.onclick = () => { histTab = b.dataset.htab; histAll = false; render(); });
+  if ($('histMore')) $('histMore').onclick = () => { histAll = true; render(); };
+  if ($('histDays')) $('histDays').onchange = async e => { try { await call('/api/phone/history-days', { days: +e.target.value }); toast('已改'); refreshHist(true); } catch (err) { toast(err.message, true); } };
+  if ($('histClear')) $('histClear').onclick = async () => {
+    if (!confirm('清空这部手机上看到的记录？\n\n电脑上的记录和文件不受影响。')) return;
+    try { await call('/api/phone/history-clear', {}); toast('已清空'); refreshHist(true); } catch (err) { toast(err.message, true); }
+  };
+}
+
 // 小云：电脑那边的文件池。手机点“下载”打开链接，下载页在手机上解密（电脑关着也能下）。
 let cloudList = null, cloudAt = 0, cloudKey = null;
 async function refreshCloud() {
@@ -181,6 +229,7 @@ function render() {
     ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
     ${viaRelay && localStorage.getItem(K + 'moved') === '1' ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。<b>请重新放一次到主屏幕：</b>点 Safari 底部的“分享” → “添加到主屏幕”，再把主屏幕上旧的“轻桥”图标删掉（旧图标只在家里的 Wi-Fi 能用）。${isIOS() ? '设置过“轻点背面”的，点下面“设置轻点背面”，按第 1 步复制新地址替换快捷指令里的旧地址。' : ''}</div>` : ''}
     <div id="clipBox">${clipCard()}</div>
+    ${histCard()}
     ${sendCard()}
     ${inboxCard()}
     ${cloudCard()}
@@ -212,6 +261,7 @@ function bind() {
   $('files').onchange = () => { upload([...$('files').files]); $('files').value = ''; };
   $('toClip').onchange = e => { sendToClip = e.target.checked; localStorage.setItem(K + 'clip', sendToClip ? '1' : '0'); };
   if ($('tipX')) $('tipX').onclick = () => { localStorage.setItem(K + 'tip', '1'); render(); };
+  bindHist();
   if ($('movedX')) $('movedX').onclick = () => { localStorage.removeItem(K + 'moved'); render(); };
   if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
   if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };

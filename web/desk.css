@@ -263,3 +263,26 @@ details.fold2:not([open]) { gap: 0; }
 .feed .finfo .iconbtn { width: 22px; height: 22px; opacity: 0; }
 .feed .finfo:hover .iconbtn { opacity: 1; }
 .feed .finfo .iconbtn svg { width: 12px; height: 12px; }
+
+/* 2.2.5 动态：小图 / 中图，保留天数 */
+.ftabs.fviews { margin-left: 8px; }
+.ftabs.fviews button { padding: 3px 7px; display: inline-grid; place-items: center; }
+.ftabs.fviews svg { width: 14px; height: 14px; }
+.feed .fgal { display: grid; gap: 8px; padding: 8px 14px 10px 52px; border-top: 1px solid var(--line2); }
+.feed .fday + .fgal { border-top: 0; }
+.feed .fgal.small { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.feed .fgal.medium { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.feed .tile { margin: 0; position: relative; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); background: var(--line2); }
+.feed .tile img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; cursor: zoom-in; }
+.feed .fgal.medium .tile img { aspect-ratio: 4 / 3; }
+.feed .tile figcaption { display: none; }
+.feed .fgal.medium .tile figcaption { display: flex; gap: 6px; align-items: baseline; padding: 5px 8px; font-size: 12px; background: var(--panel); border-top: 1px solid var(--line2); }
+.feed .tile figcaption span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); }
+.feed .tile figcaption em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.feed .tile .tacts { position: absolute; top: 4px; right: 4px; display: none; gap: 2px; background: var(--panel); border-radius: 7px; padding: 2px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.feed .tile:hover .tacts { display: flex; }
+.feed .fgal.small .tile .tacts [data-reveal], .feed .fgal.small .tile .tacts [data-recopy] { display: none; }
+.feed .tile .tacts .iconbtn { width: 22px; height: 22px; }
+.feed .tile .tacts svg { width: 12px; height: 12px; }
+.feed .ffoot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line2); background: var(--panel2); }
+.feed .ffoot select { font: inherit; font-size: 12px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }

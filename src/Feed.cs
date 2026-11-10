@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Web.Script.Serialization;
 
 namespace LanBridge;
@@ -15,25 +17,40 @@ public sealed class FeedItem {
  public List<FeedFile> files = new List<FeedFile>();
  public long time, total, done;
  public bool image, clip;
- [ScriptIgnore] public string text;          // 剪贴板文字只放内存，不写盘
+ public string text;                         // 2.2.5 起文字也存下来（feed.dat 用当前 Windows 账户加密），重启后记录还在
  [ScriptIgnore] public long bumped;
 }
 
 sealed class Feed {
  readonly App app; readonly List<FeedItem> items = new List<FeedItem>();
- string FilePath => Path.Combine(app.Root, "feed.json");
+ string OldPath => Path.Combine(app.Root, "feed.json");
+ string FilePath => Path.Combine(app.Root, "feed.dat");
+ static readonly byte[] Entropy = Encoding.UTF8.GetBytes("LanBridge/2/feed");
+ const int MaxItems = 3000, MaxSavedText = 20000;
+ public int Count { get { lock (items) return items.Count; } }
+ /// <summary>按设置里的保留天数删掉太早的记录（只删记录，不删收到的文件）。</summary>
+ public void Prune() { if (PruneNow()) Changed(true); }
+ bool PruneNow() {
+  int days = app.C.feedDays; if (days <= 0) return false;
+  long cut = Util.Ms() - days * 86400000L;
+  lock (items) return items.RemoveAll(x => x.time < cut && x.status != "sending" && x.status != "receiving") > 0;
+ }
  public Feed(App app) {
   this.app = app;
   try {
-   if (File.Exists(FilePath)) {
-    var saved = J.Parse<List<FeedItem>>(File.ReadAllText(FilePath));
+   List<FeedItem> saved = null;
+   if (File.Exists(FilePath)) saved = J.Parse<List<FeedItem>>(ProtectedData.Unprotect(File.ReadAllBytes(FilePath), Entropy, DataProtectionScope.CurrentUser));
+   else if (File.Exists(OldPath)) saved = J.Parse<List<FeedItem>>(File.ReadAllText(OldPath));
+   {
     if (saved != null) foreach (var f in saved) { if (f.status == "sending" || f.status == "receiving") { f.status = "failed"; f.note = "程序关闭时还没传完"; } items.Add(f); }
    }
-  } catch { }
+  } catch (Exception e) { Log.Write("动态记录读不了，重新开始：" + e.Message); }
+  PruneNow();
  }
 
  public FeedItem Add(FeedItem f) {
-  lock (items) { f.time = f.time == 0 ? Util.Ms() : f.time; items.Insert(0, f); while (items.Count > 200) items.RemoveAt(items.Count - 1); }
+  lock (items) { f.time = f.time == 0 ? Util.Ms() : f.time; items.Insert(0, f); while (items.Count > MaxItems) items.RemoveAt(items.Count - 1); }
+  if (DateTime.UtcNow - lastPrune > TimeSpan.FromHours(1)) { lastPrune = DateTime.UtcNow; PruneNow(); }
   Changed(true); return f;
  }
  public FeedItem Find(string id) { lock (items) return items.FirstOrDefault(x => x.id == id); }
@@ -51,7 +68,7 @@ sealed class Feed {
  public void Clear() { lock (items) items.Clear(); Changed(true); }
  public List<FeedItem> Snapshot() { lock (items) return items.ToList(); }
 
- DateTime lastSave;
+ DateTime lastSave, lastPrune;
  void Changed(bool persist) {
   app.Changes.Bump();
   if (!persist) return;
@@ -67,9 +84,15 @@ sealed class Feed {
  void Save() {
   lastSave = DateTime.UtcNow;
   try {
-   List<FeedItem> keep; lock (items) keep = items.Where(x => x.kind != "text").Take(150).ToList();
-   string tmp = FilePath + ".tmp"; File.WriteAllText(tmp, J.Str(keep));
+   byte[] bytes;
+   lock (items) {
+    var keep = items.Select(x => x.text != null && x.text.Length > MaxSavedText
+     ? new FeedItem { id = x.id, kind = x.kind, dir = x.dir, from = x.from, status = x.status, note = x.note, to = x.to, files = x.files, time = x.time, total = x.total, done = x.done, image = x.image, clip = x.clip, text = x.text.Substring(0, MaxSavedText) } : x).ToList();
+    bytes = ProtectedData.Protect(J.Bytes(keep), Entropy, DataProtectionScope.CurrentUser);
+   }
+   string tmp = FilePath + ".tmp"; File.WriteAllBytes(tmp, bytes);
    if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null); else File.Move(tmp, FilePath);
+   try { if (File.Exists(OldPath)) File.Delete(OldPath); } catch { }
   } catch { }
  }
 }

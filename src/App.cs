@@ -52,7 +52,7 @@ sealed class App : ApplicationContext {
  public readonly object Gate = new object();
  public readonly string Root, LocalToken = Crypto.Token(16), MdnsName;
  public readonly Changes Changes = new Changes();
- public readonly Feed Feed; public readonly Hub Hub; public readonly PhoneHub Phones; public readonly ClipService Clip; public readonly Discovery Discovery; public readonly Relay Relay; public readonly TempRelay Temp; public readonly Cloud Cloud; public readonly PhoneHistory History;
+ public readonly Feed Feed; public readonly Hub Hub; public readonly PhoneHub Phones; public readonly ClipService Clip; public readonly Discovery Discovery; public readonly Relay Relay; public readonly TempRelay Temp; public readonly Cloud Cloud; public readonly PhoneHistory History; public readonly ClipLog ClipLog;
  readonly HttpServer server; readonly Mdns mdns; RelayServer testRelay; readonly CommandPipe pipe; readonly Tray tray; readonly Control invoker;
  MainWindow window;
  public Icon AppIcon;
@@ -70,7 +70,7 @@ sealed class App : ApplicationContext {
   try { var b = Embedded.Resource("app.ico"); AppIcon = b == null ? SystemIcons.Application : new Icon(new MemoryStream(b)); } catch { AppIcon = SystemIcons.Application; }
   ThreadPool.SetMinThreads(64, 32);
 
-  Feed = new Feed(this); History = new PhoneHistory(this); Clip = new ClipService(this); Hub = new Hub(this); Phones = new PhoneHub(this); Discovery = new Discovery(this); Relay = new Relay(this); Temp = new TempRelay(this); Cloud = new Cloud(this);
+  Feed = new Feed(this); History = new PhoneHistory(this); ClipLog = new ClipLog(this); Clip = new ClipService(this); Hub = new Hub(this); Phones = new PhoneHub(this); Discovery = new Discovery(this); Relay = new Relay(this); Temp = new TempRelay(this); Cloud = new Cloud(this);
   var router = new Router(this);
   server = new HttpServer(o.Loopback ? IPAddress.Loopback : IPAddress.Any, o.Port, router.Handle);
   server.Start();

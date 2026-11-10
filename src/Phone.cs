@@ -38,7 +38,13 @@ sealed class PhoneHub {
  }
 
  public void RefreshPair() { lock (Gate) { PairSecret = Crypto.Token(10); PairUntil = Util.Ms() + 15 * 60 * 1000; } app.Changes.Bump(); }
- public void ClipChanged() => changes.Bump();
+ public void ClipChanged() { try { app.ClipLog.Add(app.Hub.Latest, app.Hub.LatestPaths); } catch { } changes.Bump(); }
+
+ public object HistoryClear(Phone p) { lock (Gate) { p.histFrom = Util.Ms(); app.Save(); } return new { ok = true }; }
+ public object HistoryDays(Phone p, Dictionary<string, object> d) {
+  int n = (int)d.Num("days", 7); if (n != 0 && n != 1 && n != 7 && n != 30) n = 7;
+  lock (Gate) { p.histDays = n; app.Save(); } return new { ok = true, days = n };
+ }
 
  Phone Add(string name, out string token) {
   token = Crypto.Token(24);
@@ -125,7 +131,7 @@ sealed class PhoneHub {
  public object State(Phone p, long since) {
   long rev = since > 0 ? changes.Wait(since, 25000) : changes.Rev;
   lock (Gate) p.seen = Util.Ms();
-  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
+  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), hist = app.ClipLog.Rev, inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
  }
 
  object ClipView(Phone p) {
@@ -210,6 +216,11 @@ sealed class PhoneHub {
    InboxItem it; lock (Gate) it = inbox.FirstOrDefault(x => x.id == box && x.phoneId == p.id);
    if (it == null) throw new ApiError(404, "这个文件已经不在了");
    path = it.path; name = it.name; lock (Gate) it.got = true; changes.Bump(); app.Changes.Bump();
+  } else if (q.Q("log").Length > 0) {
+   var e = app.ClipLog.Find(q.Q("log")); int.TryParse(q.Q("i"), out int k);
+   var lf = e?.files.ElementAtOrDefault(k);
+   if (lf?.path == null) throw new ApiError(404, "这个文件已经不在了");
+   path = lf.path; name = lf.name;
   } else {
    var ev = app.Hub.Latest; var paths = app.Hub.LatestPaths; int.TryParse(q.Q("i"), out int i);
    if (ev == null || ev.id != q.Q("ev") || paths == null || i < 0 || i >= paths.Length) throw new ApiError(404, "电脑剪贴板已经换了内容");
