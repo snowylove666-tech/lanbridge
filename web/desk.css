@@ -286,3 +286,13 @@ details.fold2:not([open]) { gap: 0; }
 .feed .tile .tacts svg { width: 12px; height: 12px; }
 .feed .ffoot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line2); background: var(--panel2); }
 .feed .ffoot select { font: inherit; font-size: 12px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+
+/* 2.2.6 中图按图片原来的比例排，文字筛选时多露几行 */
+.feed .fgal.medium { display: flex; flex-wrap: wrap; gap: 10px; }
+.feed .fgal.medium .tile { display: inline-flex; flex-direction: column; flex: none; }
+.feed .fgal.medium .tile img { height: 150px; width: auto; min-width: 110px; max-width: 320px; aspect-ratio: auto; object-fit: cover; }
+.feed .fgal.medium .tile figcaption { width: 0; min-width: 100%; box-sizing: border-box; }
+.feed .fgal.medium { align-items: flex-start; }
+.feed .tile figcaption em { white-space: nowrap; flex: none; }
+.feed .fi button.ftxt { border: 0; background: none; padding: 0; font-family: inherit; text-align: left; cursor: pointer; width: 100%; }
+.feed .fi .ftxt { margin: 0 0 3px; color: var(--ink) !important; font-size: 13px; line-height: 1.5; color: var(--ink2); white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; user-select: text; }

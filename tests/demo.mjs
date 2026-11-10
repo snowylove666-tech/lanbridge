@@ -84,6 +84,7 @@ if (mode === 'empty') {
   await call(A, '/api/test/copy', { kind: 'image', paths: [shot] }); await sleep(600);
   await call(A, '/api/local/send', { target: bId, paths: [doc, mov] }); await sleep(800);
   await fetch(A.base + '/api/phone/text', { method: 'POST', headers: { 'X-LB-Token': ph.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '明天上午 10:00 和李总在国贸三期 B 座 21 层见面，带上合同第二版。' }) }); await sleep(500);
+  for (const [n, w, h] of [['IMG_2038.png', 300, 520], ['IMG_2039.png', 640, 360], ['IMG_2040.png', 400, 400]]) { await fetch(A.base + '/api/phone/upload?name=' + n + '&clip=1', { method: 'POST', headers: { 'X-LB-Token': ph.token }, body: await png(w, h) }); await sleep(400); }
   await fetch(A.base + '/api/phone/upload?name=IMG_2041.png&clip=1', { method: 'POST', headers: { 'X-LB-Token': ph.token }, body: fs.readFileSync(shot) }); await sleep(500);
   await fetch(A.base + '/api/phone/text', { method: 'POST', headers: { 'X-LB-Token': ph.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '快递单号 SF1428 0937 6612\n收件人：王经理 138****2201\n地址：北京市朝阳区建国路 89 号华贸中心 3 号楼 1702\n备注：工作日 9:00-18:00 送达，到了先打电话。' }) }); await sleep(500);
   await call(B, '/api/test/copy', { kind: 'text', text: '轻桥会把你复制的文字、截图和文件，自动带到你的其他设备上。\n不用选设备，不用点发送。' });

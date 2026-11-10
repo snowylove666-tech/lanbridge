@@ -309,7 +309,7 @@ function tileHtml(f) {
   const r = route(f);
   return `<figure class="tile" title="${esc(f.files[0].name)}${r ? '\n' + r.replace(/<[^>]+>/g, '') : ''}">
     <img loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">
-    <figcaption><span>${esc(f.files[0].name)}</span><em>${hhmm(f.time)}</em></figcaption>
+    <figcaption><span>${esc(f.files[0].name)}</span><em>${esc(isMe(f.from) ? '本机' : f.from || '')} · ${hhmm(f.time)}</em></figcaption>
     <div class="tacts"><button class="iconbtn" data-recopy="${f.id}" title="重新放进剪贴板">${icon('copy')}</button><button class="iconbtn" data-reveal="${f.id}" title="在文件夹中显示">${icon('folder')}</button><button class="iconbtn" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button></div>
   </figure>`;
 }
@@ -348,6 +348,8 @@ function renderFeed() {
       : f.kind === 'text' && f.text ? `<button class="ft link" data-recopy="${f.id}" title="点一下重新放进剪贴板\n\n${titleAttr}">${rowTitle(f)}</button>`
       : `<b class="ft" title="${titleAttr}">${rowTitle(f)}</b>`;
     let extra = '';
+    // 只看文字时把内容多露几行，方便回头找
+    const long = feedFilter === 'text' && f.kind === 'text' && f.text && (f.text.length > 60 || f.text.includes('\n'));
     if (busy && f.total > 0) extra += `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
     if (f.status === 'failed' && f.note) extra += `<div class="fnote bad">${esc(f.note)}</div>`;
     const thumb = picReady(f) ? `<img class="mini" loading="lazy" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">` : '';
@@ -361,7 +363,7 @@ function renderFeed() {
     acts.push(`<button class="iconbtn" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button>`);
     out.push(`<li class="fi">
       <div class="fic">${icon(kindIcon)}</div>
-      <div class="fb"><div class="fl">${title}<span class="fm">${meta.join(' · ')}</span></div>${extra}</div>
+      <div class="fb">${long ? `<button class="ftxt" data-recopy="${f.id}" title="点一下重新放进剪贴板">${esc(f.text.slice(0, 600))}</button>` : ''}<div class="fl">${long ? '' : title}<span class="fm">${meta.join(' · ')}</span></div>${extra}</div>
       <div class="fa">${acts.join('')}</div>
       ${thumb}
       <span class="fst">${rowStatus(f)}</span>

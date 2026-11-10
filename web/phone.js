@@ -229,8 +229,8 @@ function render() {
     ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
     ${viaRelay && localStorage.getItem(K + 'moved') === '1' ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。<b>请重新放一次到主屏幕：</b>点 Safari 底部的“分享” → “添加到主屏幕”，再把主屏幕上旧的“轻桥”图标删掉（旧图标只在家里的 Wi-Fi 能用）。${isIOS() ? '设置过“轻点背面”的，点下面“设置轻点背面”，按第 1 步复制新地址替换快捷指令里的旧地址。' : ''}</div>` : ''}
     <div id="clipBox">${clipCard()}</div>
-    ${histCard()}
     ${sendCard()}
+    ${histCard()}
     ${inboxCard()}
     ${cloudCard()}
     ${isIOS() && localStorage.getItem(K + 'tapTip') !== '1' ? `<div class="card tipcard"><div class="ct">${icon('hand')}更省事：轻点手机背面<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>设置一次（约 1 分钟），以后手机上复制完<b>轻点背面两下</b>就发到电脑，不用打开这个网页；电脑上复制的也能这样取回手机。还可以设成<b>离开微信等 App 时自动发送</b>，连背面都不用点。<div class="actions" style="margin-top:10px"><button class="btn soft" id="guide2">${icon('hand')}看怎么设置</button></div></div>` : ''}
