@@ -267,7 +267,7 @@ function render() {
     <div id="clipBox">${clipCard()}</div>
     ${sendCard()}
     ${inboxCard()}
-    ${autoTip ? `<div class="card tipcard"><div class="ct">${icon('bolt')}不想每次都打开这个网页？<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>花 2 分钟设一次，以后<b>轻点手机背面两下</b>，电脑刚复制的字就进手机剪贴板，手机刚复制的也发到电脑。<div class="actions" style="margin-top:10px"><button class="btn primary" data-go="wizard">${icon('hand')}带我设置</button></div></div>` : ''}`;
+    ${autoTip ? `<div class="card tipcard"><div class="ct">${icon('bolt')}不想每次都打开这个网页？<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>花 2 分钟设一次，以后<b>打开微信时</b>电脑刚复制的字已经在手机剪贴板里，手机复制的也会自己发到电脑。<div class="actions" style="margin-top:10px"><button class="btn primary" data-go="wizard">${icon('hand')}带我设置</button></div></div>` : ''}`;
   if ($('text')) $('text').value = keepText;
   bind();
 }
@@ -283,7 +283,7 @@ function renderSet() {
   const ios = isIOS();
   const autoCard = ios ? `<div class="card">
       <div class="ct">${icon('bolt')}自动同步<span class="pill ${S.auto ? 'ok' : ''}">${S.auto ? '已设置' : '还没设置'}</span></div>
-      <div class="setp">${S.auto ? `快捷指令“轻桥”上次运行：${when(S.auto)}。轻点背面两下（或你设的自动化）就会两边同步文字。` : '设一次（约 2 分钟），以后<b>轻点手机背面两下</b>：电脑刚复制的字进手机剪贴板，手机刚复制的发到电脑，不用打开这个网页。'}</div>
+      <div class="setp">${S.auto ? `快捷指令“轻桥”上次运行：${when(S.auto)}。打开、离开你选的 App（或按你设的按钮）时就会两边同步文字。` : '设一次（约 2 分钟），以后<b>打开、离开微信这类 App 时自动</b>同步（也可以改成按按钮）：电脑刚复制的字进手机剪贴板，手机刚复制的发到电脑，不用打开这个网页。'}</div>
       <div class="actions"><button class="btn ${S.auto ? 'line' : 'primary'} big" data-go="wizard">${icon('hand')}${S.auto ? '重新设置 / 换了地址' : '带我一步步设置'}</button></div>
     </div>` : `<div class="card"><div class="ct">${icon('bolt')}自动同步</div><div class="setp">安卓手机：把这个网页放到主屏幕，打开后点一下屏幕就能拿到电脑刚复制的文字。</div></div>`;
   const home = standalone() ? '' : `<div class="card"><div class="ct">${icon('plus')}放到主屏幕</div><div class="setp">${homeHow()}以后像 App 一样一点就开，不用再扫码。</div></div>`;
@@ -437,7 +437,28 @@ async function pickHost() {
 
 // 走到第几步、进这一步时电脑记的“上次运行时间”：跳去别的 App 再回来（网页可能被系统重新加载）还接着走。
 let wz = (() => { try { return JSON.parse(localStorage.getItem(K + 'wz')) || null; } catch { return null; } })();
-const WZ = ['开始', '建快捷指令', '试一下', '轻点背面', '全自动'];
+const WZ = ['开始', '建快捷指令', '试一下', '怎么运行'];
+// 平时怎么运行“轻桥”：[键, 名字, 一句话, 步骤, 等待提示]
+const wzTrig = () => localStorage.getItem(K + 'trig') || 'auto';
+const TRIGS = [
+  ['auto', '全自动（推荐）', '打开、离开微信等 App 时自己运行，什么都不用按', `<a class="btn soft big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
+    <ol class="wzlist">
+      <li>底部点 <b>自动化</b> → 右上角 <b>+</b>（第一次是“新建自动化”）</li>
+      <li>往下找到 <b>App</b> → 点<b>选取</b>，勾上常用的（微信、备忘录、Safari……）→ 完成</li>
+      <li><b>已打开</b>、<b>已关闭</b>都勾上 → 选<b>立即运行</b> → 下一步</li>
+      <li>在列表里点 <b>轻桥</b>（不要点“新建空白自动化”）</li>
+    </ol>
+    <div class="hint">效果：在电脑上复制，打开微信就能直接粘贴；在微信里复制，切走时就发到电脑。每次都问“允许粘贴”的话：iPhone 设置 → App → 快捷指令 → 从其他 App 粘贴 → 允许。</div>`, '设好后打开一次刚才勾的 App，再回到这里…'],
+  ['action', '侧边的操作按钮', 'iPhone 15 Pro 及以后，左上角那个小按钮按住一下', `<div class="wzpath"><span>设置</span><span>操作按钮</span><span>左右滑到“快捷指令”</span><span class="on">轻桥</span></div>
+    <div class="hint">按住操作按钮一下就运行。没有这个按钮的 iPhone 选别的方式。</div>`, '设好后按住操作按钮一下，再回到这里…'],
+  ['cc', '控制中心按钮', '从右上角往下拉，点一下“轻桥”', `<ol class="wzlist">
+      <li>从屏幕<b>右上角往下拉</b>出控制中心 → 点左上角 <b>+</b> → <b>添加控制</b></li>
+      <li>搜 <kbd>快捷指令</kbd> → 点它 → 选 <b>轻桥</b> → 点空白处完成</li>
+    </ol>
+    <div class="hint">锁屏底部的两个按钮也能换成它：长按锁屏 → 自定 → 锁定屏幕 → 点底部按钮 → 快捷指令 → 轻桥。（iOS 18 及以上）</div>`, '设好后在控制中心点一下“轻桥”，再回到这里…'],
+  ['back', '轻点背面', '手机背面敲两下或三下', `<div class="wzpath"><span>设置</span><span>辅助功能</span><span>触控</span><span>轻点背面</span><span>轻点两下（或三下）</span><span class="on">轻桥</span></div>
+    <div class="hint">“轻点背面”在“触控”页最下面；“轻桥”在列表往下翻的“快捷指令”一栏里。戴厚壳的敲重一点。</div>`, '设好后在手机背面敲一下试试，再回到这里…'],
+];
 function wzSave() { localStorage.setItem(K + 'wz', JSON.stringify(wz)); }
 const badAt = () => (S.bad && S.bad.at) || 0;
 function wzOpen() { if (!wz || wz.i >= WZ.length) wz = { i: 0, base: S.auto || 0, bbase: badAt() }; wzSave(); go('wizard'); }
@@ -469,9 +490,10 @@ function renderWizard() {
   if (i === 0) {
     body = `<h2>设一次，以后不用打开网页</h2>
       <div class="wzflow">
-        <div><span>${icon('laptop')}</span>电脑上复制<em>→</em><span>${icon('hand')}</span>轻点手机背面两下<em>→</em><span>${icon('phone')}</span>手机上粘贴</div>
-        <div><span>${icon('phone')}</span>手机上复制<em>→</em><span>${icon('hand')}</span>轻点手机背面两下<em>→</em><span>${icon('laptop')}</span>电脑上 Ctrl+V</div>
+        <div><span>${icon('laptop')}</span>电脑上复制<em>→</em><span>${icon('bolt')}</span>手机上运行一下“轻桥”<em>→</em><span>${icon('phone')}</span>手机上粘贴</div>
+        <div><span>${icon('phone')}</span>手机上复制<em>→</em><span>${icon('bolt')}</span>手机上运行一下“轻桥”<em>→</em><span>${icon('laptop')}</span>电脑上 Ctrl+V</div>
       </div>
+      <p class="wzp">“运行一下”可以是<b>全自动</b>（打开、离开微信这类 App 时自己运行），也可以是按侧边按钮、控制中心、轻点背面，最后一步你自己挑。</p>
       <p class="wzp">靠的是 iPhone 自带的<b>“快捷指令”</b>App。苹果不让网页替你自动装，所以要照着点几下——<b>每一步都有按钮带你跳过去，做完回到这里，我会告诉你成没成</b>。大约 2 分钟。</p>
       ${inWeChat() ? '<div class="banner">请先换到 Safari 里打开再设置（微信里跳不到快捷指令）。</div>' : ''}`;
     next = '开始';
@@ -479,24 +501,24 @@ function renderWizard() {
     body = `<h2>第 1 步 · 新建快捷指令</h2>
       <a class="btn primary big wzjump" id="wzMake" href="shortcuts://create-shortcut">${icon('copy')}复制地址，并打开“快捷指令”</a>
       <div class="hint" style="text-align:center">${esc(host.how)}。地址里带着这部手机的授权，别发给别人。</div>
-      <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），<b>按顺序</b>加 4 个操作：</p>
+      <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），<b>按顺序</b>加 3 个操作：</p>
       <ol class="wzlist">
-        <li>搜 <kbd>剪贴板</kbd> → 点 <b>获取剪贴板</b></li>
-        <li>搜 <kbd>URL</kbd> → 点名字<b>只有“URL”两个字</b>的那个（不是“获取 URL 内容”）→ 点里面浅色的“URL” → <b>粘贴</b>（地址已经替你复制好了）
-          <div class="wzsub">粘贴后是<b>黑色的普通文字</b> http://…/v1/swap?t=… 一长串。如果那一格自己变成了<b>蓝色小块</b>“剪贴板”：点它 → <b>清除变量</b>，再粘贴。</div></li>
-        <li>搜 <kbd>URL 内容</kbd> → 点 <b>获取 URL 内容</b>。它会自动写成“获取 <u class="pillv">URL</u> 的内容”——<b>正好对，不用改</b>。
-          <div class="wzsub">然后点“内容”右边的 <b>⌄</b> 展开：<b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面“文件”那一行 → 在弹出的列表里点<b>剪贴板</b>（第 1 个操作的结果）。</div></li>
+        <li>搜 <kbd>URL</kbd> → 点名字<b>只有“URL”两个字</b>的那个 → 点里面浅色的“URL” → <b>粘贴</b>（地址已经替你复制好了）
+          <div class="wzsub">它必须是<b>第一个</b>操作，上面什么都没有。粘贴后是黑色的普通文字 http://…/v1/swap?t=…；如果是<b>蓝色小块</b>（带剪贴板图标），点它 → <b>清除变量</b>，再粘贴。</div></li>
+        <li>搜 <kbd>URL 内容</kbd> → 点 <b>获取 URL 内容</b>，它自动写成“获取 <u class="pillv">URL</u> 的内容”，不用改。点“内容”右边的 <b>⌄</b> 展开：
+          <div class="wzsub"><b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点“文件”那一行 → 在弹出的选项里点<b>剪贴板</b>。<br>这个“剪贴板”是 iPhone 自带的，<b>不用</b>另外加“获取剪贴板”操作。</div></li>
         <li>搜 <kbd>拷贝</kbd> → 点 <b>拷贝至剪贴板</b>（自动写成“将 URL的内容 拷贝至剪贴板”，不用改）</li>
         <li>点最上面的名字 → <b>重新命名</b> → 改成 <kbd>轻桥</kbd> → 右上角<b>完成</b>
-          <div class="wzsub">以前建过的（包括名字打错的）都删掉，只留这一条叫“轻桥”的：下一步的按钮按名字找它。</div></li>
+          <div class="wzsub">以前建过的都删掉，只留这一条叫“轻桥”的。</div></li>
       </ol>
-      <div class="wzmockt">做完应该长这样：</div>
+      <div class="wzmockt">做完应该长这样（就这 3 个）：</div>
       <div class="wzmock">
-        <div class="mk"><i class="mi y">${icon('copy')}</i>获取剪贴板</div>
         <div class="mk"><i class="mi b">${icon('link')}</i><div>URL<small class="plain">${esc(url.replace(/^https?:\/\//, '').slice(0, 34))}…</small></div></div>
         <div class="mk"><i class="mi g">${icon('download')}</i><div>获取 <u>URL</u> 的内容<small>方法 <b>POST</b>　请求体 <b>文件</b>　文件 <u>剪贴板</u></small></div></div>
         <div class="mk"><i class="mi y">${icon('copy')}</i>将 <u>URL的内容</u> 拷贝至剪贴板</div>
       </div>
+      <details class="wzfold"><summary>已经建过、想改旧的</summary><div class="hint">
+        ① 删掉最上面的“获取剪贴板”（点它右边的 ×）。② “URL”那一格如果是蓝色小块：点它 → 清除变量 → 粘贴地址。③ “获取 URL 的内容”展开，方法 POST、请求体 文件、文件 剪贴板。</div></details>
       <details class="wzfold"><summary>没跳过去 / 想自己复制地址</summary><div class="kv"><code>${esc(url)}</code><button class="btn soft small" data-copy="${esc(url)}">${icon('copy')}复制</button></div><div class="hint">手动打开“快捷指令”App，点右上角 <b>+</b>，再照上面做。找不到这个 App 就去 App Store 搜“快捷指令”装回来（苹果自己出的，免费）。</div></details>`;
     next = '建好了，去试一下';
   } else if (i === 2) {
@@ -505,32 +527,19 @@ function renderWizard() {
       <a class="btn primary big wzjump" href="shortcuts://run-shortcut?name=${encodeURIComponent('轻桥')}">${icon('play')}运行“轻桥”</a>
       ${wzCheck('等电脑收到…（运行完回到这里）', '，快捷指令没问题。')}
       ${wzHit() ? '' : `<details class="wzfold" ${wzBad() ? '' : 'open'}><summary>没打勾？看弹出的是哪句</summary><div class="hint">
-        · <b>无法将文本转换为 URL</b>：“获取 … 的内容”中间那一格是蓝色的“剪贴板”，应该是“URL”。按第 1 步在它前面加一个“URL”操作，再把这一格换成它（点蓝色小块 → 清除变量 → 选 URL）。<br>
-        · 复制到的是 <b>“轻桥：快捷指令还差一步…”</b>或 <b>{"error":"没有这个接口"}</b>：“方法”还是 GET，改成 <b>POST</b>，请求体选<b>文件</b>。<br>
+        · <b>无效的 URL</b> 或 <b>无法将文本转换为 URL</b>：“URL”那一格是蓝色小块（剪贴板），不是地址。删掉“获取剪贴板”操作，点蓝色小块 → 清除变量 → 粘贴地址。<br>
+        · 拷回来的是 <b>“轻桥：快捷指令还差一步…”</b>：照那句话改方法 / 请求体。<br>
         · 提示<b>找不到快捷指令</b>：名字要一字不差叫 <b>轻桥</b>。<br>
-        · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}<br>
-        · 没报错也没打勾：回上一步对照“做完应该长这样”，多半是第 3 条的 <b>POST / 文件 / 剪贴板</b>没选上，或 URL 没粘贴完整。</div></details>`}`;
-    nextOk = wzHit(); skip = '先跳过';
-  } else if (i === 3) {
-    body = `<h2>第 3 步 · 让“轻点背面两下”运行它</h2>
-      <p class="wzp">这一步在 iPhone 的<b>设置</b>里（苹果不让网页直接跳到这一页，要自己点进去）：</p>
-      <div class="wzpath"><span>设置</span><span>辅助功能</span><span>触控</span><span>轻点背面</span><span>轻点两下</span><span class="on">轻桥</span></div>
-      <div class="hint">“轻点背面”在“触控”页的<b>最下面</b>；“轻桥”在列表<b>往下翻</b>的“快捷指令”一栏里。也可以在设置顶部的搜索框直接搜 <b>轻点背面</b>。</div>
-      <p class="wzp">设好以后回到这里，<b>用手指在手机背面敲两下</b>（戴厚壳的敲重一点）：</p>
-      ${wzCheck('等你敲两下…', '，轻点背面两下可以用了。')}`;
+        · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}</div></details>`}`;
     nextOk = wzHit(); skip = '先跳过';
   } else {
-    body = `<h2>可选 · 连敲都不用敲</h2>
-      <p class="wzp">让 iPhone 在你<b>打开或离开</b>微信这类 App 时自己运行“轻桥”：电脑刚复制的字，打开微信时已经在剪贴板里了。（iOS 17 及以上）</p>
-      <a class="btn soft big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
-      <ol class="wzlist">
-        <li>底部点 <b>自动化</b> → 右上角 <b>+</b>（第一次是“新建自动化”）</li>
-        <li>往下找到 <b>App</b> → 点<b>选取</b>，勾上常用的（微信、备忘录、Safari……）→ 完成</li>
-        <li><b>已打开</b>、<b>已关闭</b>都勾上 → 选<b>立即运行</b> → 下一步</li>
-        <li>在列表里点 <b>轻桥</b>（不要点“新建空白自动化”）</li>
-      </ol>
-      <div class="hint">每次都问“允许粘贴”的话：iPhone 设置 → App → 快捷指令 → 从其他 App 粘贴 → 允许。不想要了，在“自动化”里左滑删除。</div>`;
-    next = '完成';
+    const trig = TRIGS.find(t => t[0] === wzTrig()) || TRIGS[0];
+    body = `<h2>第 3 步 · 平时怎么运行它</h2>
+      <p class="wzp">挑一种顺手的（可以以后回来换，也可以都设）：</p>
+      <div class="trigs">${TRIGS.map(t => `<button class="trig ${t === trig ? 'on' : ''}" data-trig="${t[0]}"><b>${t[1]}</b><small>${t[2]}</small></button>`).join('')}</div>
+      <div class="trigbody">${trig[3]}</div>
+      ${wzCheck(trig[4], '，以后就这样用。')}`;
+    next = '完成'; nextOk = wzHit(); skip = '先完成，以后再试';
   }
   const html = `${banners()}
     <div class="wzhead"><button class="back" id="wzBack">${icon('back')}${i === 0 ? '返回' : '上一步'}</button><div class="wzdots">${WZ.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div><button class="back" id="wzQuit">退出向导</button></div>
@@ -543,6 +552,7 @@ function renderWizard() {
   renderWizard.last = html; $('app').innerHTML = html;
   $('wzBack').onclick = () => i === 0 ? wzClose() : wzGo(i - 1);
   $('wzQuit').onclick = wzClose;
+  document.querySelectorAll('[data-trig]').forEach(b => b.onclick = () => { localStorage.setItem(K + 'trig', b.dataset.trig); renderWizard.last = null; renderWizard(); });
   $('wzNext').onclick = () => { if (i === last) { toast('设置好了'); wzClose(); } else wzGo(i + 1); };
   if ($('wzSkip')) $('wzSkip').onclick = () => wzGo(i + 1);
   // 先把地址放进手机剪贴板（这一下点按就是苹果要的“用户操作”），再让链接跳去快捷指令。

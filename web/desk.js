@@ -100,7 +100,7 @@ function renderPending() {
 }
 
 function devSub(d) {
-  if (d.kind === 'phone') return d.state === 'online' ? '手机上正开着轻桥' : d.auto ? '轻点手机背面就同步 · 上次 ' + when(Math.max(d.auto, d.seen || 0)) : '已配对 · ' + (d.seen ? '上次打开 ' + when(d.seen) : '还没打开过');
+  if (d.kind === 'phone') return d.state === 'online' ? '手机上正开着轻桥' : d.auto ? '快捷指令同步 · 上次 ' + when(Math.max(d.auto, d.seen || 0)) : '已配对 · ' + (d.seen ? '上次打开 ' + when(d.seen) : '还没打开过');
   if (d.state === 'online') return d.paused ? '对方暂停了同步' : d.route === 'relay' ? '在线 · 不在同一个网络（经中转）' : '在线 · ' + (d.addr || '');
   if (d.state === 'reverse') return '在线（只能由它连过来）';
   if (d.error) return d.error;
@@ -160,7 +160,7 @@ function phonePanel() {
       <ol class="steps">
         <li>打开手机相机，对准二维码</li>
         <li>点弹出的链接，就连上了</li>
-        <li>网页底部点<b>设置</b>：放到主屏幕；iPhone 再跟着向导设一次，以后<b>轻点手机背面两下</b>就同步，不用打开网页</li>
+        <li>网页底部点<b>设置</b>：放到主屏幕；iPhone 再跟着向导设一次，以后打开微信这类 App 时<b>自动同步</b>，不用打开网页</li>
       </ol>
     </div>
     ${S.pair.relayUrl ? `<div class="qrmode">${relay ? `经中转，在哪都能用 · <button class="linkbtn" data-qrlan="1">只在同一个 Wi-Fi 用（更快）</button>` : `只在同一个 Wi-Fi 用 · <button class="linkbtn" data-qrlan="0">改成在哪都能用</button>`}</div>` : ''}

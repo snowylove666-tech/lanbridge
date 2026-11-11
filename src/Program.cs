@@ -8,7 +8,7 @@ using System.Windows.Forms;
 namespace LanBridge;
 
 static class Program {
- public const string Version = "2.2.10";
+ public const string Version = "2.2.11";
 
  [STAThread]
  static int Main(string[] args) {
