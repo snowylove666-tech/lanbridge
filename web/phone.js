@@ -120,9 +120,8 @@ function clipCard() {
      ${quickReady() ? '<div class="quickhint">电脑刚复制的 · 点屏幕任意空白处也能复制</div>' : ''}`;
   else if (c.kind === 'image' && c.items[0] && c.items[0].ok) {
     const u = fileUrl(`ev=${c.id}&i=0`);
-    body = `<img class="clip-img" src="${u}&view=1" alt="">
-      <div class="actions"><a class="btn primary big" href="${u}" download="${esc(c.items[0].name)}">${icon('download')}保存图片</a></div>
-      <div class="hint">也可以长按图片 → 存储到“照片”或拷贝。</div>`;
+    body = `<img class="clip-img" data-view="${u}" src="${u}&view=1&thumb=1200" alt="">
+      <div class="actions"><button class="btn primary big" data-view="${u}">${icon('image')}看大图 / 保存</button></div>`;
   } else body = (c.items || []).map((x, i) => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)}</div></div>${x.ok ? `<a class="btn soft small" href="${fileUrl(`ev=${c.id}&i=${i}`)}" download="${esc(x.name)}">${icon('download')}下载</a>` : '<span class="muted">已不在</span>'}</div>`).join('');
   const from = c ? `<span class="muted">${c.fromMe ? '这部手机发的' : '来自 ' + esc(c.from)} · ${when(c.time)}</span>` : '';
   return `<div class="card"><div class="ct">${icon('text')}电脑剪贴板${from}</div>${body}</div>`;
@@ -172,7 +171,7 @@ function histCard(full) {
   for (const x of shown) {
     if (isImg(x)) {
       const u = fileUrl(`log=${x.id}&i=0`);
-      (grid = grid || []).push(x.files[0].ok ? `<a class="himg" href="${u}&view=1" target="_blank" rel="noopener"><img loading="lazy" src="${u}&view=1" alt=""><em>${when(x.time)}</em></a>` : `<span class="himg gone">已不在<em>${when(x.time)}</em></span>`);
+      (grid = grid || []).push(x.files[0].ok ? `<button class="himg" data-view="${u}"><img loading="lazy" src="${u}&view=1&thumb=360" alt=""><em>${when(x.time)}</em></button>` : `<span class="himg gone">已不在<em>${when(x.time)}</em></span>`);
       continue;
     }
     flush();
@@ -328,6 +327,26 @@ document.addEventListener('click', e => {
   toast(ok ? '已复制电脑上的文字，可以去粘贴了' : '复制没成功，点“复制到手机”再试', !ok);
 });
 
+// 看图：就在这一页上盖一层，右上角能关（以前是跳到图片地址，放在主屏幕用时没有返回键，只能把轻桥划掉重开）。
+function openViewer(u) {
+  closeViewer(true);
+  const v = document.createElement('div'); v.className = 'viewer'; v.id = 'viewer';
+  v.innerHTML = `<button class="vx" id="vx" aria-label="关闭">${icon('x')}</button>
+    <div class="vbody"><span class="spin"></span><img src="${u}&view=1&thumb=2000" alt=""></div>
+    <div class="vbar"><span>长按图片 → 存储到“照片”</span>${standalone() ? '' : `<a class="btn soft small" href="${u}" download>${icon('download')}下载原图</a>`}<button class="btn soft small" id="vclose">关闭</button></div>`;
+  document.body.appendChild(v);
+  const img = v.querySelector('img'); img.onload = () => v.classList.add('ready'); img.onerror = () => { v.querySelector('.vbody').innerHTML = '<div class="verr">图片打不开：电脑上的文件可能已经移走了。</div>'; };
+  v.addEventListener('click', e => { if (e.target === img || e.target.closest('a')) return; closeViewer(); });
+  try { history.pushState({ lbView: 1 }, ''); } catch { }
+}
+function closeViewer(silent) {
+  const v = $('viewer'); if (!v) return;
+  v.remove();
+  if (!silent && history.state && history.state.lbView) try { history.back(); } catch { }
+}
+addEventListener('popstate', () => closeViewer(true));
+document.addEventListener('click', e => { const t = e.target.closest('[data-view]'); if (t) { e.preventDefault(); openViewer(t.dataset.view); } });
+
 function bindClip() {
   const c0 = $('copy'); if (c0) c0.addEventListener('click', () => { if (S.clip && S.clip.kind === 'text') { markCopied(); setTimeout(render, 50); } });
   const c = $('copy');
@@ -455,8 +474,11 @@ function renderWizard() {
       <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），加 3 个操作：</p>
       <ol class="wzlist">
         <li>搜 <kbd>剪贴板</kbd> → 点 <b>获取剪贴板</b></li>
-        <li>搜 <kbd>URL</kbd> → 点 <b>获取 URL 内容</b> → 点里面蓝色的 <b>URL</b> → <b>粘贴</b>（地址已经替你复制好了）</li>
-        <li>点这一条右边的 <b>⌄</b> 展开 → <b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面的“文件” → 选<b>剪贴板</b></li>
+        <li>搜 <kbd>URL</kbd> → 点 <b>获取 URL 内容</b>。这时它会写成“获取 <u class="pillv">剪贴板</u> 内容”——那个蓝色的<b>剪贴板</b>是系统自己填的，<b>要换掉</b>：
+          <div class="wzsub">点蓝色的<b>剪贴板</b> → 点<b>清除变量</b> → 这一格变成浅色的“URL” → 点它 → <b>粘贴</b>（地址已经替你复制好了）</div>
+          <div class="wzsub">粘贴后这一格应该是 <b>http://…/v1/swap?t=…</b> 开头的一长串。</div></li>
+        <li>点“内容”右边的 <b>⌄</b> 展开 → <b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面“文件”那一行 → 选<b>剪贴板</b>
+          <div class="wzsub">弹出的是“选择变量”时：点上面<b>获取剪贴板</b>那一条下方的蓝色“剪贴板”。</div></li>
         <li>搜 <kbd>拷贝</kbd> → 点 <b>拷贝至剪贴板</b></li>
         <li>点最上面的名字 → <b>重新命名</b> → 改成 <kbd>轻桥</kbd> → 右上角<b>完成</b></li>
       </ol>
@@ -475,7 +497,8 @@ function renderWizard() {
       ${wzCheck('等电脑收到…（运行完回到这里）', '，快捷指令没问题。')}
       ${wzHit() ? '' : `<details class="wzfold"><summary>等了一会还没打勾？</summary><div class="hint">
         · 提示<b>找不到快捷指令</b>：名字要一字不差叫 <b>轻桥</b>。<br>
-        · 提示<b>连接失败</b>：${viaRelay || S.relay ? '看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}<br>
+        · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}<br>
+        · 提示<b>没有这个接口</b>或返回一串带 error 的字：“方法”还是 GET，要改成 <b>POST</b>。<br>
         · 没报错也没打勾：回上一步对照“做完应该长这样”，多半是第 3 条的 <b>POST / 文件 / 剪贴板</b>没选上，或 URL 没粘贴完整。</div></details>`}`;
     nextOk = wzHit(); skip = '先跳过';
   } else if (i === 3) {

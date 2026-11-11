@@ -240,9 +240,50 @@ sealed class PhoneHub {
   }
   var fi = new FileInfo(path); if (!fi.Exists) throw new ApiError(404, "文件已被移动或删除");
   string type = MimeOf(name);
+  // 手机上看的是缩小后的图（经中转传原图又慢又占线，几张大图就把连接堵住了）；要原图另外点。
+  if (int.TryParse(q.Q("thumb"), out int tw) && tw >= 64 && tw <= 2400 && fi.Length < 64 * 1024 * 1024 && (type == "image/png" || type == "image/jpeg" || type == "image/bmp" || type == "image/gif")) {
+   byte[] small = null; try { small = ThumbOf(path, fi, tw); } catch { }
+   if (small != null) { res.Bytes(small, "image/jpeg", 200, new Dictionary<string, string> { ["Content-Disposition"] = "inline" }); return; }
+  }
   var headers = new Dictionary<string, string> { ["Content-Disposition"] = (q.Q("view") == "1" ? "inline" : "attachment") + "; filename*=UTF-8''" + Uri.EscapeDataString(name) };
   using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
   var s = res.Begin(200, type, fi.Length, headers); f.CopyTo(s, 1 << 16); s.Flush();
+ }
+
+ static readonly Dictionary<string, byte[]> thumbs = new Dictionary<string, byte[]>(); static readonly List<string> thumbKeys = new List<string>();
+ static byte[] ThumbOf(string path, FileInfo fi, int max) {
+  string key = path + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks + "|" + max;
+  lock (thumbs) if (thumbs.TryGetValue(key, out var hit)) return hit;
+  byte[] data;
+  using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+  using (var src = System.Drawing.Image.FromStream(f, false, false)) {
+   // 手机拍的照片靠 EXIF 记方向：先转正
+   try {
+    if (Array.IndexOf(src.PropertyIdList, 0x0112) >= 0) {
+     int o = src.GetPropertyItem(0x0112).Value[0];
+     var flip = o == 3 ? System.Drawing.RotateFlipType.Rotate180FlipNone : o == 6 ? System.Drawing.RotateFlipType.Rotate90FlipNone : o == 8 ? System.Drawing.RotateFlipType.Rotate270FlipNone : System.Drawing.RotateFlipType.RotateNoneFlipNone;
+     if (flip != System.Drawing.RotateFlipType.RotateNoneFlipNone) src.RotateFlip(flip);
+    }
+   } catch { }
+   double k = Math.Min(1.0, (double)max / Math.Max(src.Width, src.Height));
+   int w = Math.Max(1, (int)Math.Round(src.Width * k)), h = Math.Max(1, (int)Math.Round(src.Height * k));
+   using var bmp = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+   using (var g = System.Drawing.Graphics.FromImage(bmp)) {
+    g.Clear(System.Drawing.Color.White);
+    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+    g.DrawImage(src, 0, 0, w, h);
+   }
+   var enc = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders().First(x => x.MimeType == "image/jpeg");
+   using var ps = new System.Drawing.Imaging.EncoderParameters(1);
+   ps.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 82L);
+   using var m = new MemoryStream(); bmp.Save(m, enc, ps); data = m.ToArray();
+  }
+  if (data.Length < 700 * 1024) lock (thumbs) {
+   if (!thumbs.ContainsKey(key)) { thumbs[key] = data; thumbKeys.Add(key); }
+   while (thumbKeys.Count > 80) { thumbs.Remove(thumbKeys[0]); thumbKeys.RemoveAt(0); }
+  }
+  return data;
  }
 
  public static string MimeOf(string name) => Path.GetExtension(name).ToLowerInvariant() switch {

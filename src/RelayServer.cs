@@ -130,6 +130,9 @@ sealed class RelayServer : IDisposable {
 
  void Tunnel(Req q, Res res, string kind, string key, string rest) {
   string id = key;
+  // 手机的网络（流量、热点）常把闲着的连接悄悄掐掉，iPhone 却还拿旧连接发下一个请求，
+  // 快捷指令就报“网络连接已中断”，网页也会卡很久。给手机的回复都写明“用完就关”，每次请求用新连接。
+  if (kind == "m") res.Close = true;
   if (kind == "c") {
    string code = new string(key.ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
    lock (gate) { if (!codes.TryGetValue(code, out var c) || c.until < Util.Ms()) { res.Json(new { error = "配对码不对，或那台电脑已经关了轻桥" }, 404); return; } id = c.id; }

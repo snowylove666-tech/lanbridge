@@ -100,6 +100,7 @@ function tunnel(req, res, kind, key, rest, search) {
     if (!c || c.until < Date.now()) return json(res, 404, { error: '配对码不对，或那台电脑已经关了轻桥' });
     id = c.id;
   } else if (!ID.test(id)) return json(res, 404, { error: '没有这台设备' });
+  if (kind === 'm') res.setHeader('connection', 'close'); // 手机网络常悄悄掐掉闲置连接，不让手机复用旧连接
   if (kind === 'm' && rest === '') { res.writeHead(301, { location: `/m/${id}/${search}` }); return res.end(); }
   if (!allowed(kind, req.method, rest)) return json(res, 403, { error: '不允许经中转访问这个地址' });
   const d = devices.get(id);

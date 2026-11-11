@@ -132,3 +132,20 @@ body.tabbed .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
 .wznav { margin-top: 16px; }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 .wzskip { display: block; margin: 10px auto 0; border: 0; background: none; font: inherit; font-size: 13.5px; color: var(--muted); text-decoration: underline; }
+
+/* 2.2.9 页内看图 */
+button.himg { border: 1px solid var(--line2); padding: 0; font: inherit; cursor: pointer; }
+.clip-img { cursor: zoom-in; }
+.viewer { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: flex; flex-direction: column; }
+.viewer .vbody { flex: 1; min-height: 0; display: grid; place-items: center; padding: calc(56px + env(safe-area-inset-top)) 8px 8px; }
+.viewer .vbody img { max-width: 100%; max-height: 100%; object-fit: contain; opacity: 0; transition: opacity .15s; -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; grid-area: 1 / 1; }
+.viewer .vbody .spin { grid-area: 1 / 1; }
+.viewer.ready .vbody img { opacity: 1; }
+.viewer.ready .vbody .spin { display: none; }
+.viewer .verr { color: #fff; font-size: 14.5px; padding: 20px; text-align: center; }
+.viewer .vx { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; display: grid; place-items: center; }
+.viewer .vx svg { width: 20px; height: 20px; }
+.viewer .vbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); color: rgba(255,255,255,.75); font-size: 13px; }
+.viewer .vbar span { flex: 1; }
+.wzsub { margin-top: 5px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line2); font-size: 13.5px; line-height: 1.6; }
+.pillv { text-decoration: none; color: #fff; background: var(--accent); padding: 1px 7px; border-radius: 6px; font-size: .92em; }
