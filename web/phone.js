@@ -182,10 +182,10 @@ function histCard(full) {
     else out.push(x.files.map((f, i) => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(f.name)}</div><div class="fs">${size(f.size)} · ${when(x.time)}</div></div>${f.ok ? `<a class="btn soft small" href="${fileUrl(`log=${x.id}&i=${i}`)}" download="${esc(f.name)}">${icon('download')}下载</a>` : '<span class="muted">已不在</span>'}</div>`).join(''));
   }
   flush();
-  return `<div class="card"><div class="ct">${icon('list')}电脑复制过的${tabs.length > 2 ? `<span class="htabs">${tabs.map(([k, l]) => `<button class="${histTab === k ? 'on' : ''}" data-htab="${k}">${l}</button>`).join('')}</span>` : ''}</div>
+  return `${full && list.length ? `<div class="hbar"><span>共 ${list.length} 条</span><button class="btn soft small" data-hclear="1">${icon('trash')}清空历史</button></div>` : ''}<div class="card"><div class="ct">${icon('list')}电脑复制过的${tabs.length > 2 ? `<span class="htabs">${tabs.map(([k, l]) => `<button class="${histTab === k ? 'on' : ''}" data-htab="${k}">${l}</button>`).join('')}</span>` : ''}</div>
     ${list.length ? out.join('') : '<div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div>'}
     ${more ? '<button class="btn line" id="histMore" style="width:100%;margin-top:10px">看更多</button>' : ''}
-    <div class="hfoot">只在这部手机上看的记录 · 自动清理 <select id="histDays">${[[1, '1 天'], [7, '7 天'], [30, '30 天'], [0, '不清理']].map(([v, l]) => `<option value="${v}" ${hist.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${list.length ? '<button class="btn ghost small" id="histClear">清空</button>' : ''}</div>
+    <div class="hfoot">只在这部手机上看的记录 · 自动清理 <select id="histDays">${[[1, '1 天'], [7, '7 天'], [30, '30 天'], [0, '不清理']].map(([v, l]) => `<option value="${v}" ${hist.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${list.length ? '<button class="btn ghost small" data-hclear="1">清空</button>' : ''}</div>
   </div>`;
 }
 function bindHist() {
@@ -193,10 +193,10 @@ function bindHist() {
   document.querySelectorAll('[data-htab]').forEach(b => b.onclick = () => { histTab = b.dataset.htab; histAll = false; render(); });
   if ($('histMore')) $('histMore').onclick = () => { histAll = true; render(); };
   if ($('histDays')) $('histDays').onchange = async e => { try { await call('/api/phone/history-days', { days: +e.target.value }); toast('已改'); refreshHist(true); } catch (err) { toast(err.message, true); } };
-  if ($('histClear')) $('histClear').onclick = async () => {
+  document.querySelectorAll('[data-hclear]').forEach(b => b.onclick = async () => {
     if (!confirm('清空这部手机上看到的记录？\n\n电脑上的记录和文件不受影响。')) return;
     try { await call('/api/phone/history-clear', {}); toast('已清空'); refreshHist(true); } catch (err) { toast(err.message, true); }
-  };
+  });
 }
 
 // 小云：电脑那边的文件池。手机点“下载”打开链接，下载页在手机上解密（电脑关着也能下）。
@@ -538,20 +538,22 @@ function renderWizard() {
         · 拷回来的是 <b>“轻桥：快捷指令还差一步…”</b>：照那句话改方法 / 请求体。<br>
         · 提示<b>找不到快捷指令</b>：名字要一字不差叫 <b>轻桥</b>。<br>
         · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}</div></details>`}`;
-    nextOk = wzHit(); skip = '先跳过';
+    nextOk = true;
   } else {
     const others = TRIGS.filter(t => t[0] !== 'auto'), trig = others.find(t => t[0] === wzTrig()) || null;
     body = `<h2>第 3 步 · 设成自动运行</h2>
       <p class="wzp">设好以后什么都不用按：<b>电脑上复制 → 打开微信就能粘贴</b>；<b>微信里复制 → 切走就到了电脑</b>。</p>
       <a class="btn primary big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
       <ol class="wzlist">
-        <li>点屏幕<b>最下面</b>的 <b>自动化</b></li>
-        <li>点右上角 <b>+</b>（第一次用是屏幕中间的<b>新建自动化</b>）</li>
-        <li>往下翻，点 <b>App</b></li>
-        <li>点 <b>选取</b> → 勾上 <b>微信</b>（备忘录、Safari 想要也勾上）→ 右上角 <b>完成</b></li>
-        <li>勾上 <b>已打开</b> 和 <b>已关闭</b>，下面选 <b>立即运行</b>，<b>运行时通知</b>关掉 → 右上角 <b>下一步</b></li>
-        <li>在列表里点 <b>轻桥</b>，就设好了</li>
+        <li>找到 <b>自动化</b>：在屏幕最下面那一排（快捷指令 · <b>自动化</b> · 快捷指令中心）。
+          <div class="wzsub">看不到这一排：左上角有 <b>‹</b> 就一直点它，退回最外面一页，这一排就出来了。</div></li>
+        <li>点 <b>新建自动化</b>；以前建过的，点右上角 <b>+</b>。接着点 <b>创建个人自动化</b>（有这一项才点）。</li>
+        <li>出来一长串（特定时间、到达、离开……），<b>往下翻</b>，点 <b>App</b></li>
+        <li>点“App”那一行右边的 <b>选取</b> → 搜 <kbd>微信</kbd> → 勾上 → 右上角 <b>完成</b></li>
+        <li>勾上 <b>已打开</b> 和 <b>已关闭</b>；下面选 <b>立即运行</b>（不要“运行前确认”），<b>运行时通知</b>关掉 → 右上角 <b>下一步</b></li>
+        <li>在“我的快捷指令”里点 <b>轻桥</b>（不要点“新建空白自动化”）→ <b>完成</b></li>
       </ol>
+      <div class="hint">哪一步的画面和这里不一样，截个图发给我。</div>
       <div class="wzmockt">设好后“自动化”里会多一条：</div>
       <div class="wzmock"><div class="mk"><i class="mi b">${icon('bolt')}</i><div>打开或关闭“微信”时<small>立即运行　<u>轻桥</u></small></div></div></div>
       ${wzCheck('设好后打开一次微信，再回到这里…', '，以后打开、离开微信都会自动同步。')}
@@ -560,7 +562,7 @@ function renderWizard() {
         <div class="trigs">${others.map(t => `<button class="trig ${t === trig ? 'on' : ''}" data-trig="${t[0]}"><b>${t[1]}</b><small>${t[2]}</small></button>`).join('')}</div>
         ${trig ? `<div class="trigbody">${trig[3]}</div>` : ''}
       </details>`;
-    next = '完成'; nextOk = wzHit(); skip = '先完成，以后再试';
+    next = '完成'; nextOk = true;
   }
   const html = `${banners()}
     <div class="wzhead"><button class="back" id="wzBack">${icon('back')}${i === 0 ? '返回' : '上一步'}</button><div class="wzdots">${WZ.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div><button class="back" id="wzQuit">退出向导</button></div>
