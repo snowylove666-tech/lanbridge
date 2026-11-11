@@ -149,3 +149,9 @@ button.himg { border: 1px solid var(--line2); padding: 0; font: inherit; cursor:
 .viewer .vbar span { flex: 1; }
 .wzsub { margin-top: 5px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line2); font-size: 13.5px; line-height: 1.6; }
 .pillv { text-decoration: none; color: #fff; background: var(--accent); padding: 1px 7px; border-radius: 6px; font-size: .92em; }
+
+/* 2.2.10 */
+.wzbad { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--ink); font-size: 14px; line-height: 1.6; }
+.wzbad svg { flex: none; width: 20px; height: 20px; margin-top: 2px; color: var(--warn); }
+.wzmock .mi.b { background: #3d8bf5; }
+.wzmock small.plain { color: var(--ink2); font-family: var(--mono); font-size: 11.5px; word-break: break-all; }

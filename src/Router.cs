@@ -102,6 +102,7 @@ sealed class Router {
    case "/v1/sync" when q.Method == "POST": res.Json(ph.SyncIn(phone, ShortcutBody(q))); return;
    case "/v1/ack" when q.Method == "POST": res.Json(ph.AckIn(phone, ShortcutBody(q))); return;
    case "/v1/swap" when q.Method == "POST": ph.SwapIn(phone, q, res); return;
+   case "/v1/swap" when q.Method == "GET": ph.SwapBad(phone, "get", res); return;   // “方法”还是默认的 GET
   }
   throw new ApiError(404, "没有这个接口");
  }

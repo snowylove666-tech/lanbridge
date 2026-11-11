@@ -439,16 +439,24 @@ async function pickHost() {
 let wz = (() => { try { return JSON.parse(localStorage.getItem(K + 'wz')) || null; } catch { return null; } })();
 const WZ = ['开始', '建快捷指令', '试一下', '轻点背面', '全自动'];
 function wzSave() { localStorage.setItem(K + 'wz', JSON.stringify(wz)); }
-function wzOpen() { if (!wz || wz.i >= WZ.length) wz = { i: 0, base: S.auto || 0 }; wzSave(); go('wizard'); }
-function wzGo(i) { wz = { i, base: S.auto || 0 }; wzSave(); render(); scrollTo(0, 0); }
+const badAt = () => (S.bad && S.bad.at) || 0;
+function wzOpen() { if (!wz || wz.i >= WZ.length) wz = { i: 0, base: S.auto || 0, bbase: badAt() }; wzSave(); go('wizard'); }
+function wzGo(i) { wz = { i, base: S.auto || 0, bbase: badAt() }; wzSave(); render(); scrollTo(0, 0); }
 function wzClose() { localStorage.removeItem(K + 'wz'); wz = null; go('set'); }
 // 进这一步之后快捷指令又运行过 = 电脑收到了
 const wzHit = () => !!(wz && S.auto && S.auto !== wz.base);
+// 进这一步之后快捷指令到了电脑、但配错了：直接说改哪里
+const wzBad = () => (wz && S.bad && S.bad.at > (wz.bbase || 0)) ? S.bad.kind : null;
+const BAD = {
+  get: '<b>电脑收到了，但“方法”还是 GET。</b>回到快捷指令，在“获取 URL 的内容”那一条点<b>“内容”右边的 ⌄</b> → <b>方法</b>改成 <b>POST</b> → <b>请求体</b>选<b>文件</b> → <b>文件</b>选<b>剪贴板</b>，再点一次上面的按钮。',
+  body: '<b>电脑收到了，但“请求体”选的是 JSON 或表单。</b>改成<b>文件</b>，下面的<b>文件</b>选<b>剪贴板</b>，再点一次上面的按钮。',
+};
 
 function wzCheck(waiting, done) {
-  return wzHit()
-    ? `<div class="wzok">${icon('check')}<div><b>电脑收到了</b>${done}</div></div>`
-    : `<div class="wzwait"><span class="spin"></span><div>${waiting}</div></div>`;
+  if (wzHit()) return `<div class="wzok">${icon('check')}<div><b>电脑收到了</b>${done}</div></div>`;
+  const bad = wzBad();
+  if (bad) return `<div class="wzbad">${icon('info')}<div>${BAD[bad] || BAD.get}</div></div>`;
+  return `<div class="wzwait"><span class="spin"></span><div>${waiting}</div></div>`;
 }
 
 function renderWizard() {
@@ -471,22 +479,23 @@ function renderWizard() {
     body = `<h2>第 1 步 · 新建快捷指令</h2>
       <a class="btn primary big wzjump" id="wzMake" href="shortcuts://create-shortcut">${icon('copy')}复制地址，并打开“快捷指令”</a>
       <div class="hint" style="text-align:center">${esc(host.how)}。地址里带着这部手机的授权，别发给别人。</div>
-      <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），加 3 个操作：</p>
+      <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），<b>按顺序</b>加 4 个操作：</p>
       <ol class="wzlist">
         <li>搜 <kbd>剪贴板</kbd> → 点 <b>获取剪贴板</b></li>
-        <li>搜 <kbd>URL</kbd> → 点 <b>获取 URL 内容</b>。这时它会写成“获取 <u class="pillv">剪贴板</u> 内容”——那个蓝色的<b>剪贴板</b>是系统自己填的，<b>要换掉</b>：
-          <div class="wzsub">点蓝色的<b>剪贴板</b> → 点<b>清除变量</b> → 这一格变成浅色的“URL” → 点它 → <b>粘贴</b>（地址已经替你复制好了）</div>
-          <div class="wzsub">粘贴后这一格应该是 <b>http://…/v1/swap?t=…</b> 开头的一长串。</div></li>
-        <li>点“内容”右边的 <b>⌄</b> 展开 → <b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面“文件”那一行 → 选<b>剪贴板</b>
-          <div class="wzsub">弹出的是“选择变量”时：点上面<b>获取剪贴板</b>那一条下方的蓝色“剪贴板”。</div></li>
-        <li>搜 <kbd>拷贝</kbd> → 点 <b>拷贝至剪贴板</b></li>
-        <li>点最上面的名字 → <b>重新命名</b> → 改成 <kbd>轻桥</kbd> → 右上角<b>完成</b></li>
+        <li>搜 <kbd>URL</kbd> → 点名字<b>只有“URL”两个字</b>的那个（不是“获取 URL 内容”）→ 点里面浅色的“URL” → <b>粘贴</b>（地址已经替你复制好了）
+          <div class="wzsub">粘贴后是<b>黑色的普通文字</b> http://…/v1/swap?t=… 一长串。如果那一格自己变成了<b>蓝色小块</b>“剪贴板”：点它 → <b>清除变量</b>，再粘贴。</div></li>
+        <li>搜 <kbd>URL 内容</kbd> → 点 <b>获取 URL 内容</b>。它会自动写成“获取 <u class="pillv">URL</u> 的内容”——<b>正好对，不用改</b>。
+          <div class="wzsub">然后点“内容”右边的 <b>⌄</b> 展开：<b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面“文件”那一行 → 在弹出的列表里点<b>剪贴板</b>（第 1 个操作的结果）。</div></li>
+        <li>搜 <kbd>拷贝</kbd> → 点 <b>拷贝至剪贴板</b>（自动写成“将 URL的内容 拷贝至剪贴板”，不用改）</li>
+        <li>点最上面的名字 → <b>重新命名</b> → 改成 <kbd>轻桥</kbd> → 右上角<b>完成</b>
+          <div class="wzsub">以前建过的（包括名字打错的）都删掉，只留这一条叫“轻桥”的：下一步的按钮按名字找它。</div></li>
       </ol>
       <div class="wzmockt">做完应该长这样：</div>
       <div class="wzmock">
         <div class="mk"><i class="mi y">${icon('copy')}</i>获取剪贴板</div>
-        <div class="mk"><i class="mi g">${icon('link')}</i><div>获取 <u>${esc(host.url.replace(/^https?:\/\//, '').slice(0, 18))}…</u> 的内容<small>方法 <b>POST</b>　请求体 <b>文件</b>　文件 <u>剪贴板</u></small></div></div>
-        <div class="mk"><i class="mi y">${icon('copy')}</i>将 <u>URL 的内容</u> 拷贝至剪贴板</div>
+        <div class="mk"><i class="mi b">${icon('link')}</i><div>URL<small class="plain">${esc(url.replace(/^https?:\/\//, '').slice(0, 34))}…</small></div></div>
+        <div class="mk"><i class="mi g">${icon('download')}</i><div>获取 <u>URL</u> 的内容<small>方法 <b>POST</b>　请求体 <b>文件</b>　文件 <u>剪贴板</u></small></div></div>
+        <div class="mk"><i class="mi y">${icon('copy')}</i>将 <u>URL的内容</u> 拷贝至剪贴板</div>
       </div>
       <details class="wzfold"><summary>没跳过去 / 想自己复制地址</summary><div class="kv"><code>${esc(url)}</code><button class="btn soft small" data-copy="${esc(url)}">${icon('copy')}复制</button></div><div class="hint">手动打开“快捷指令”App，点右上角 <b>+</b>，再照上面做。找不到这个 App 就去 App Store 搜“快捷指令”装回来（苹果自己出的，免费）。</div></details>`;
     next = '建好了，去试一下';
@@ -495,10 +504,11 @@ function renderWizard() {
       <p class="wzp">点下面的按钮运行一次。第一次会问<b>“允许‘轻桥’连接到…”</b>和<b>“允许粘贴”</b>，都点<b>允许</b>。运行完回到这个网页。</p>
       <a class="btn primary big wzjump" href="shortcuts://run-shortcut?name=${encodeURIComponent('轻桥')}">${icon('play')}运行“轻桥”</a>
       ${wzCheck('等电脑收到…（运行完回到这里）', '，快捷指令没问题。')}
-      ${wzHit() ? '' : `<details class="wzfold"><summary>等了一会还没打勾？</summary><div class="hint">
+      ${wzHit() ? '' : `<details class="wzfold" ${wzBad() ? '' : 'open'}><summary>没打勾？看弹出的是哪句</summary><div class="hint">
+        · <b>无法将文本转换为 URL</b>：“获取 … 的内容”中间那一格是蓝色的“剪贴板”，应该是“URL”。按第 1 步在它前面加一个“URL”操作，再把这一格换成它（点蓝色小块 → 清除变量 → 选 URL）。<br>
+        · 复制到的是 <b>“轻桥：快捷指令还差一步…”</b>或 <b>{"error":"没有这个接口"}</b>：“方法”还是 GET，改成 <b>POST</b>，请求体选<b>文件</b>。<br>
         · 提示<b>找不到快捷指令</b>：名字要一字不差叫 <b>轻桥</b>。<br>
         · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}<br>
-        · 提示<b>没有这个接口</b>或返回一串带 error 的字：“方法”还是 GET，要改成 <b>POST</b>。<br>
         · 没报错也没打勾：回上一步对照“做完应该长这样”，多半是第 3 条的 <b>POST / 文件 / 剪贴板</b>没选上，或 URL 没粘贴完整。</div></details>`}`;
     nextOk = wzHit(); skip = '先跳过';
   } else if (i === 3) {

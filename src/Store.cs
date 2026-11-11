@@ -26,6 +26,8 @@ public sealed class Phone {
  public string lastReport; public long lastReportAt;
  /// <summary>这部手机的快捷指令上次运行的时间（0 = 还没设置过自动同步）。</summary>
  public long swapAt;
+ /// <summary>快捷指令配错了（get = 方法没改成 POST，body = 请求体选了 JSON / 表单）和时间；设置向导据此直接指出改哪里。</summary>
+ public string swapBad; public long swapBadAt;
 }
 
 public sealed class Config {
