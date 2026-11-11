@@ -70,3 +70,65 @@ textarea.input { min-height: 96px; font-size: 16px; }
 .hfoot select { font: inherit; font-size: 13px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
 .hfoot .btn { margin-left: auto; }
 .quickhint { margin-top: 8px; text-align: center; font-size: 13px; color: var(--accent); font-weight: 600; }
+
+/* 2.2.8 三个页面 + 设置向导 */
+body.tabbed main { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+body.tabbed .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; justify-content: center; padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--panel) 92%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--line); }
+.tabbar[hidden] { display: none; }
+.tabbar button { position: relative; flex: 1; max-width: 180px; display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: none; font: inherit; font-size: 11.5px; color: var(--muted); padding: 6px 0 4px; border-radius: 12px; }
+.tabbar button svg { width: 23px; height: 23px; }
+.tabbar button.on { color: var(--accent); font-weight: 700; }
+.tabbar .tdot { position: absolute; top: 5px; left: calc(50% + 9px); width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+.banner.bad { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+.pill { margin-left: auto; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: var(--line2); color: var(--muted); }
+.pill.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.setp { font-size: 14px; line-height: 1.6; color: var(--ink2); }
+.kvrow { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line2); font-size: 14px; }
+.kvrow:first-of-type { border-top: 0; }
+.kvrow span { color: var(--muted); flex: none; }
+.kvrow b { font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.wzhead { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.wzhead .back { margin: 0; border: 0; background: none; font: inherit; font-size: 14px; }
+.wzdots { display: flex; gap: 6px; }
+.wzdots i { width: 22px; height: 5px; border-radius: 3px; background: var(--line); }
+.wzdots i.done { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.wzdots i.on { background: var(--accent); }
+.wz h2 { margin: 2px 0 12px; font-size: 19px; line-height: 1.35; }
+.wzp { margin: 12px 0 8px; font-size: 14.5px; line-height: 1.65; color: var(--ink2); }
+.wzp b, .wzlist b { color: var(--ink); }
+.wzjump { display: flex; width: 100%; margin: 4px 0 6px; }
+.wzlist { margin: 6px 0 4px; padding-left: 22px; }
+.wzlist li { margin-bottom: 11px; line-height: 1.65; font-size: 14.5px; color: var(--ink2); }
+.wzlist kbd, .wzp kbd { font: inherit; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 6px; }
+.wzflow { display: grid; gap: 8px; }
+.wzflow > div { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 11px 12px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line2); font-size: 13.5px; }
+.wzflow span { display: inline-grid; place-items: center; color: var(--accent); }
+.wzflow span svg { width: 17px; height: 17px; }
+.wzflow em { font-style: normal; color: var(--faint); margin: 0 2px; }
+.wzmockt { margin-top: 14px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.wzmock { margin-top: 6px; padding: 10px; border-radius: 16px; background: var(--line2); display: grid; gap: 7px; }
+.wzmock .mk { display: flex; align-items: center; gap: 9px; padding: 10px 11px; border-radius: 12px; background: var(--panel); font-size: 13.5px; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.wzmock .mi { flex: none; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; }
+.wzmock .mi svg { width: 15px; height: 15px; }
+.wzmock .mi.y { background: #f5a623; }
+.wzmock .mi.g { background: #34c759; }
+.wzmock u { text-decoration: none; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 6px; }
+.wzmock small { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.wzmock small b { color: var(--ink2); }
+.wzfold { margin-top: 12px; font-size: 13.5px; }
+.wzfold summary { color: var(--accent); }
+.wzfold .kv { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.wzfold .kv code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; padding: 7px 9px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--line2); }
+.wzfold .hint { line-height: 1.7; }
+.wzpath { display: flex; flex-wrap: wrap; gap: 6px 4px; margin: 4px 0 6px; }
+.wzpath span { position: relative; padding: 6px 10px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--line2); font-size: 13.5px; font-weight: 600; }
+.wzpath span:not(:last-child)::after { content: '›'; margin-left: 8px; color: var(--faint); font-weight: 400; }
+.wzpath span.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.wzok, .wzwait { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+.wzok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ink); }
+.wzok svg { flex: none; width: 22px; height: 22px; color: var(--ok); }
+.wzwait { background: var(--panel2); border: 1px dashed var(--line); color: var(--muted); }
+.wznav { margin-top: 16px; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.wzskip { display: block; margin: 10px auto 0; border: 0; background: none; font: inherit; font-size: 13.5px; color: var(--muted); text-decoration: underline; }

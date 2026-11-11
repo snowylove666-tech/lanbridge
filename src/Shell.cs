@@ -62,6 +62,34 @@ static class Shell {
    using var k = Registry.CurrentUser.CreateSubKey(RunKey);
    if (on) k.SetValue("LanBridge", "\"" + ExePath + "\" --background"); else k.DeleteValue("LanBridge", false);
   } catch (Exception e) { Log.Write("开机启动设置失败：" + e.Message); }
+  SetGuard(on);
+ }
+
+ /// <summary>
+ /// 守护任务：每 5 分钟看一眼，轻桥没在运行就重新打开（它要是没了，手机就连不到这台电脑）。
+ /// 已经在运行时新进程马上退出；用户自己点“退出”的不打扰。只属于当前用户，不需要管理员。
+ /// </summary>
+ const string GuardTask = "LanBridge Guard";
+ static bool? guardOn;
+ public static void SetGuard(bool on) {
+  try {
+   if (guardOn == on) return;
+   if (!on) { Sch("/delete /f /tn \"" + GuardTask + "\""); guardOn = false; return; }
+   string xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+    + "<RegistrationInfo><Description>轻桥意外退出后自动重新打开（跟着轻桥设置里的“开机自动启动”开关）</Description></RegistrationInfo>"
+    + "<Triggers><TimeTrigger><Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>2026-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger></Triggers>"
+    + "<Principals><Principal id=\"Author\"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>"
+    + "<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>4</Priority><Enabled>true</Enabled></Settings>"
+    + "<Actions Context=\"Author\"><Exec><Command>" + System.Security.SecurityElement.Escape(ExePath) + "</Command><Arguments>--background --guard</Arguments></Exec></Actions></Task>";
+   string f = Path.Combine(Path.GetTempPath(), "lanbridge-guard-" + Process.GetCurrentProcess().Id + ".xml");
+   File.WriteAllText(f, xml, Encoding.Unicode);
+   try { int code = Sch("/create /f /tn \"" + GuardTask + "\" /xml \"" + f + "\""); if (code != 0) Log.Write("守护任务没建成（代码 " + code + "）"); else guardOn = true; }
+   finally { try { File.Delete(f); } catch { } }
+  } catch (Exception e) { Log.Write("守护任务设置失败：" + e.Message); }
+ }
+ static int Sch(string args) {
+  using var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false });
+  return p.WaitForExit(15000) ? p.ExitCode : -1;
  }
 
  static string SendToLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SendTo), "轻桥.lnk");

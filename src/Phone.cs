@@ -143,7 +143,7 @@ sealed class PhoneHub {
  public object State(Phone p, long since) {
   long rev = since > 0 ? changes.Wait(since, 25000) : changes.Rev;
   lock (Gate) p.seen = Util.Ms();
-  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), hist = app.ClipLog.Rev, inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
+  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), auto = p.swapAt, hist = app.ClipLog.Rev, inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
  }
 
  object ClipView(Phone p) {
@@ -322,6 +322,8 @@ sealed class PhoneHub {
  /// </summary>
  public void SwapIn(Phone p, Req q, Res res) {
   if (C.paused) throw new ApiError(503, "电脑上的轻桥暂停了");
+  lock (Gate) { bool first = p.swapAt == 0; p.swapAt = Util.Ms(); if (first) app.Save(); }
+  changes.Bump(); app.Changes.Bump();   // 手机上的设置向导在等这一下：“电脑收到了”
   string type = q.H("Content-Type").ToLowerInvariant();
   if (type.StartsWith("image/")) {
    var bytes = q.ReadAll(64 * 1024 * 1024);

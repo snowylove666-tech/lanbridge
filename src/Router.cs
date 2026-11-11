@@ -305,7 +305,7 @@ sealed class Router {
     addr = l.ViaRelay ? null : l.Url != null ? new Uri(l.Url).Host : l.M.addrs.FirstOrDefault(), route = l.ViaRelay && l.State != "offline" ? "relay" : "lan", seen = l.M.seen, pending = l.Pending.Count,
     text = l.PeerText, files = l.PeerFiles, paused = l.PeerPaused
    }).OrderBy(x => x.state == "offline" ? 1 : 0).ThenBy(x => x.name).ToList();
-   var phones = C.phones.Select(p => new { id = "phone:" + p.id, kind = "phone", name = p.name, form = "phone", state = now - p.seen < 40000 ? "online" : "offline", seen = p.seen }).ToList();
+   var phones = C.phones.Select(p => new { id = "phone:" + p.id, kind = "phone", name = p.name, form = "phone", state = now - p.seen < 40000 ? "online" : "offline", seen = p.seen, auto = p.swapAt }).ToList();
    return new {
     rev = app.Changes.Rev, version = Program.Version,
     me = new { id = C.deviceId, name = C.deviceName, form = Shell.Form, port = app.Opt.Port, ip = addrs.FirstOrDefault()?.Ip.ToString() ?? "127.0.0.1", mdns = app.MdnsName, addrs = addrs.Select(a => new { ip = a.Ip.ToString(), name = a.Name, good = a.Score >= 0 }).ToList() },

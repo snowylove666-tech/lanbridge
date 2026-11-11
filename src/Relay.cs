@@ -113,7 +113,7 @@ sealed class Relay {
  public bool CodeActive { get { lock (app.Gate) return Code != null && CodeUntil > Util.Ms(); } }
 
  void Loop() {
-  int fails = 0;
+  int fails = 0, group = 0;
   while (running) {
    string b = Base;
    if (b == null) { SetState("off", null); signal.WaitOne(5000); continue; }
@@ -122,10 +122,12 @@ sealed class Relay {
    bool aborted = false;
    try {
     var r = Make(url, "GET", State == "ok" ? 32000 : 10000); current = r;
+    // 睡眠唤醒、换网络后，系统留着的旧连接有时已经坏了（报“无法访问已释放的对象”）还一直被拿来用：连不上就换一组新连接。
+    if (group > 0) r.ConnectionGroupName = "poll" + group;
     // 手机热点、流量这类网络会悄悄掐掉半分钟没动静的连接：开 TCP 保活（10 秒一次），连接不会被当成闲置，断了也能很快发现。
     try { r.ServicePoint.SetTcpKeepAlive(true, 10000, 3000); } catch { }
     var d = J.Obj(Client.Send(r, null));
-    current = null; fails = 0; LastOk = Util.Ms();
+    current = null; if (fails >= 2) Log.Write("中转恢复了"); fails = 0; LastOk = Util.Ms();
     long max = d.Num("max"); if (max > 0) MaxBody = max;
     long pool = d.Num("pool"); if (pool != PoolMB) { PoolMB = pool; app.Changes.Bump(); }
     SetState("ok", null);
@@ -139,6 +141,7 @@ sealed class Relay {
     fails++;
     // 断一次先马上重连（中转那边 10 秒内还当这台在线，手机不会感觉到）；连着两次不行才算连不上。
     if (fails == 1 && !(e is ApiError)) { Log.Write("中转断了一下，马上重连：" + e.Message.Split('\n')[0].Trim()); continue; }
+    group++;
     SetState("error", e is ApiError ? e.Message : "连不上中转服务器");
     if (fails == 2 || fails % 20 == 0) Log.Write("中转连不上：" + e.Message.Split('\n')[0].Trim());
     signal.WaitOne(Math.Min(2000 * (fails - 1), 30000));

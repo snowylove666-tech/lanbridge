@@ -11,7 +11,8 @@ namespace LanBridge;
 
 public sealed class Options {
  public string Data, Name; public int Port = 49321; public string[] Send;
- public bool Background, Loopback, FakeClipboard, Headless, NoShell, Dev, NoLan, FakeTunnel;
+ public bool Background, Loopback, FakeClipboard, Headless, NoShell, Dev, NoLan, FakeTunnel, Guard;
+ public string RootDir => Data ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanBridge");
  public string Relay, RelayDefault;
  /// <summary>临时中转单次上限（Cloudflare 免费版一次最多 100 MB）；--relay-host 测试用的独立中转端口。</summary>
  public long RelayMaxMB = 95; public int RelayHost;
@@ -25,6 +26,7 @@ public sealed class Options {
     case "--name" when i + 1 < a.Length: o.Name = a[++i]; break;
     case "--scan" when i + 1 < a.Length: o.Scan.Add(a[++i]); break;
     case "--background": o.Background = true; break;
+    case "--guard": o.Guard = true; o.Background = true; break;
     case "--loopback": o.Loopback = true; break;
     case "--fake-clipboard": o.FakeClipboard = true; break;
     case "--headless": o.Headless = true; o.Background = true; break;
@@ -62,7 +64,7 @@ sealed class App : ApplicationContext {
 
  public App(Options o) {
   Opt = o;
-  Root = o.Data ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanBridge");
+  Root = o.RootDir;
   Directory.CreateDirectory(Root); Log.Init(Root);
   Store = new Store(Root, o);
   MdnsName = "lanbridge-" + Crypto.Sha(C.deviceId).Substring(0, 6) + ".local";
@@ -81,6 +83,8 @@ sealed class App : ApplicationContext {
   try { File.WriteAllText(Path.Combine(Root, "desk-url.txt"), DeskUrl); } catch { }
 
   if (!o.NoShell && !C.shellApplied) { Shell.SetAutostart(C.autostart); Shell.SetSendTo(C.sendTo); C.shellApplied = true; Save(); }
+  // 守护任务跟着“开机自动启动”走；老版本装的没有它，每次启动补一下。
+  if (!o.NoShell) { bool on = C.autostart; System.Threading.ThreadPool.QueueUserWorkItem(_ => Shell.SetGuard(on)); }
   if (!o.Headless) tray = new Tray(this);
   if (!o.Background) ShowWindow();
   if (o.Send != null) Ui(() => OnCommand("send", o.Send));
@@ -140,7 +144,13 @@ sealed class App : ApplicationContext {
  }
 
  bool exiting;
- public void Exit() { exiting = true; window?.Close(); ExitThread(); }
+ /// <summary>用户自己点的退出：留个记号，守护任务就不会把它再开起来。</summary>
+ public bool UserExit;
+ public void Exit() {
+  exiting = true; UserExit = true;
+  try { File.WriteAllText(Path.Combine(Root, "quit.flag"), DateTime.Now.ToString("s")); } catch { }
+  window?.Close(); ExitThread();
+ }
 
  public void Shutdown() {
   exiting = true;

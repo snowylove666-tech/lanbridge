@@ -119,6 +119,15 @@ sealed class RelayServer : IDisposable {
   return false;
  }
 
+ const string OfflinePage = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>轻桥</title>"
+  + "<style>body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f6f5f2;color:#1d1d1f;display:grid;place-items:center;min-height:100vh}"
+  + "@media(prefers-color-scheme:dark){body{background:#1c1c1e;color:#f2f1ee}.c{background:#262628!important}}"
+  + ".c{margin:20px;max-width:420px;padding:28px 22px;border-radius:18px;background:#fff;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.06)}h1{font-size:20px;margin:0 0 10px}p{margin:8px 0;color:#8b877f;font-size:14.5px}"
+  + "ul{text-align:left;font-size:14.5px;padding-left:22px;margin:12px 0}button{margin-top:14px;width:100%;height:46px;border:0;border-radius:12px;background:#3d6bf5;color:#fff;font-size:16px}</style></head>"
+  + "<body><div class=\"c\"><h1>电脑现在不在线</h1><p>手机这边没问题，是那台电脑连不上：</p><ul><li>电脑关机或睡眠了</li><li>电脑上的轻桥没在运行</li><li>电脑暂时断网了</li></ul>"
+  + "<p id=\"s\">电脑一回来，这一页会自己打开轻桥。</p><button onclick=\"location.reload()\">再试一次</button></div>"
+  + "<script>setInterval(function(){fetch(location.href,{cache:'no-store'}).then(function(r){if(r.ok)location.reload()}).catch(function(){})},5000)</script></body></html>";
+
  void Tunnel(Req q, Res res, string kind, string key, string rest) {
   string id = key;
   if (kind == "c") {
@@ -130,7 +139,11 @@ sealed class RelayServer : IDisposable {
   if (!Allowed(kind, q.Method, rest)) { res.Json(new { error = "不允许经中转访问这个地址" }, 403); return; }
   Dev d; lock (gate) devices.TryGetValue(id, out d);
   bool online; lock (gate) online = Online(d);
-  if (!online) { res.Json(new { error = "那台电脑现在不在线（没开机，或没运行轻桥）" }, 503); return; }
+  if (!online) {
+   // 手机直接打开网页时给一张看得懂的页面（以前是一行 JSON），电脑回来了自己刷新。
+   if (kind == "m" && q.Method == "GET" && rest == "/") { res.Bytes(Encoding.UTF8.GetBytes(OfflinePage), "text/html; charset=utf-8", 503, new Dictionary<string, string> { ["Cache-Control"] = "no-store" }); return; }
+   res.Json(new { error = "那台电脑现在不在线（没开机，或没运行轻桥）" }, 503); return;
+  }
   Stream body = q.Body; long length = q.Length;
   if (q.Chunked) {
    // 经隧道来的请求有时是分块的：先收下来（有上限），电脑那边要知道长度。

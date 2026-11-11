@@ -6,7 +6,7 @@ const U = p => BASE + p.replace(/^\//, '');
 const viaRelay = BASE !== '/';
 const K = 'lb2:' + (viaRelay ? BASE : '');
 let token = localStorage.getItem(K + 't') || '';
-let S = null, rev = 0, view = 'main', uploads = [], sendToClip = localStorage.getItem(K + 'clip') !== '0', alive = true;
+let S = null, rev = 0, offline = false, view = 'main', uploads = [], sendToClip = localStorage.getItem(K + 'clip') !== '0', alive = true;
 
 function guessName() {
   const ua = navigator.userAgent;
@@ -35,7 +35,7 @@ async function boot() {
   if (h.get('t')) saveToken(h.get('t')); // 从局域网网页换到中转地址时带过来的授权
   if (h.get('moved')) localStorage.setItem(K + 'moved', '1');
   if (secret || h.get('t')) history.replaceState(null, '', BASE);
-  if (h.has('guide')) view = 'guide';
+  if (h.has('guide') || localStorage.getItem(K + 'wz')) view = 'wizard';
   if (secret && token) { try { await call('/api/phone/state'); } catch (e) { if (e.status === 401) token = ''; } }
   if (secret && !token) {
     $('app').innerHTML = `<div class="card pair"><span class="spin"></span><p style="margin-top:14px">正在连接电脑…</p></div>`;
@@ -87,16 +87,24 @@ async function loop() {
   while (alive) {
     try {
       const r = await fetch(U('/api/phone/state?rev=' + (first ? 0 : rev)), { headers: { 'X-LB-Token': token } });
-      if (r.status === 401) { localStorage.removeItem(K + 't'); token = ''; const j = await r.json().catch(() => ({})); showJoin(j.error); return; }
+      if (r.status === 401) { localStorage.removeItem(K + 't'); token = ''; const j = await r.json().catch(() => ({})); $('tabbar').hidden = true; document.body.classList.remove('tabbed'); showJoin(j.error); return; }
+      if (!r.ok) { // 中转在，电脑不在（关机、睡眠、轻桥没运行）：留在原页面等它回来
+        offline = true; if (S) render(); else { setConn('电脑不在线', false); $('app').innerHTML = offlineCard(); }
+        await sleep(4000); continue;
+      }
+      offline = false;
       S = await r.json(); rev = S.rev; first = false;
       if (!viaRelay && S.relay) { alive = false; location.replace(S.relay + '#t=' + encodeURIComponent(token) + '&moved=1'); return; }
       render();
       refreshCloud(); refreshHist();
-    } catch { setConn('连不上电脑', false); await sleep(2000); }
+    } catch { setConn(navigator.onLine === false ? '手机没有网络' : '连不上电脑', false); await sleep(2000); }
   }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { rev = 0; } });
 
+function offlineCard() {
+  return `<div class="card pair"><img class="logo" src="assets/icon.svg" alt=""><h1>电脑现在不在线</h1><p>电脑关机、睡眠了，或者上面的轻桥没在运行。</p><p style="margin-top:14px;display:flex;gap:8px;justify-content:center;align-items:center"><span class="spin"></span><span class="muted">电脑一回来这里会自己连上，不用重新扫码</span></p></div>`;
+}
 function setConn(text, ok) { $('conn').innerHTML = text ? `<i class="dot ${ok ? 'on' : ''}"></i>${esc(text)}` : ''; }
 
 // ───────────── 主页面 ─────────────
@@ -109,8 +117,7 @@ function clipCard() {
   if (!c) body = `<div class="empty">在电脑上复制点什么，这里马上就会出现。</div>`;
   else if (c.kind === 'text') body = `<div class="clip-text" id="clipText">${esc(c.text)}</div>
      <div class="actions"><button class="btn primary big" id="copy">${icon('copy')}${S.clip.id === copiedId ? '已复制 · 再复制一次' : '复制到手机'}</button></div>
-     ${quickReady() ? '<div class="quickhint">电脑刚复制的 · 点屏幕任意空白处也能复制</div>' : ''}
-     <label class="check"><span class="switch"><input type="checkbox" id="quick" ${quickOn() ? 'checked' : ''}><span></span></span>电脑有新文字时，点一下屏幕任意处就复制</label>`;
+     ${quickReady() ? '<div class="quickhint">电脑刚复制的 · 点屏幕任意空白处也能复制</div>' : ''}`;
   else if (c.kind === 'image' && c.items[0] && c.items[0].ok) {
     const u = fileUrl(`ev=${c.id}&i=0`);
     body = `<img class="clip-img" src="${u}&view=1" alt="">
@@ -151,16 +158,15 @@ async function refreshHist(force) {
   histKey = k;
   try { hist = await call('/api/phone/history'); render(); } catch { }
 }
-function histCard() {
+function histCard(full) {
   if (!hist) return '';
-  const cur = S.clip && S.clip.id;
-  const list = hist.items.filter(x => x.id !== cur);
+  const list = hist.items;
   const isImg = x => x.kind === 'image' && x.files[0];
   const texts = list.filter(x => x.kind === 'text'), imgs = list.filter(isImg), files = list.filter(x => x.kind !== 'text' && !isImg(x));
   const tabs = [['all', '全部'], ['text', '文字'], ['image', '图片'], ['file', '文件']].filter(([k]) => k === 'all' || (k === 'text' ? texts : k === 'image' ? imgs : files).length);
   if (!tabs.some(([k]) => k === histTab)) histTab = 'all';
   let shown = histTab === 'all' ? list : histTab === 'text' ? texts : histTab === 'image' ? imgs : files;
-  const more = !histAll && shown.length > 12; if (more) shown = shown.slice(0, 12);
+  const more = !histAll && shown.length > 30; if (more) shown = shown.slice(0, 30);
   const out = []; let grid = null;
   const flush = () => { if (grid) { out.push(`<div class="hgrid">${grid.join('')}</div>`); grid = null; } };
   for (const x of shown) {
@@ -174,10 +180,10 @@ function histCard() {
     else out.push(x.files.map((f, i) => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(f.name)}</div><div class="fs">${size(f.size)} · ${when(x.time)}</div></div>${f.ok ? `<a class="btn soft small" href="${fileUrl(`log=${x.id}&i=${i}`)}" download="${esc(f.name)}">${icon('download')}下载</a>` : '<span class="muted">已不在</span>'}</div>`).join(''));
   }
   flush();
-  return `<div class="card"><div class="ct">${icon('text')}之前的${tabs.length > 2 ? `<span class="htabs">${tabs.map(([k, l]) => `<button class="${histTab === k ? 'on' : ''}" data-htab="${k}">${l}</button>`).join('')}</span>` : ''}</div>
+  return `<div class="card"><div class="ct">${icon('list')}电脑复制过的${tabs.length > 2 ? `<span class="htabs">${tabs.map(([k, l]) => `<button class="${histTab === k ? 'on' : ''}" data-htab="${k}">${l}</button>`).join('')}</span>` : ''}</div>
     ${list.length ? out.join('') : '<div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div>'}
     ${more ? '<button class="btn line" id="histMore" style="width:100%;margin-top:10px">看更多</button>' : ''}
-    <div class="hfoot">自动清理 <select id="histDays">${[[1, '1 天'], [7, '7 天'], [30, '30 天'], [0, '不清理']].map(([v, l]) => `<option value="${v}" ${hist.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${list.length ? '<button class="btn ghost small" id="histClear">清空</button>' : ''}</div>
+    <div class="hfoot">只在这部手机上看的记录 · 自动清理 <select id="histDays">${[[1, '1 天'], [7, '7 天'], [30, '30 天'], [0, '不清理']].map(([v, l]) => `<option value="${v}" ${hist.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${list.length ? '<button class="btn ghost small" id="histClear">清空</button>' : ''}</div>
   </div>`;
 }
 function bindHist() {
@@ -225,33 +231,88 @@ function homeHow() {
 const standalone = () => window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
+// ───────────── 三个页面：传送 / 历史 / 设置 ─────────────
+
+const TABS = [['main', 'send', '传送'], ['hist', 'list', '历史'], ['set', 'gear', '设置']];
+function go(v) { view = v; render(); scrollTo(0, 0); }
+function drawTabs() {
+  const bar = $('tabbar'); bar.hidden = false; document.body.classList.add('tabbed');
+  const cur = view === 'wizard' ? 'set' : view;
+  const dot = isIOS() && !S.auto && !inWeChat();
+  bar.innerHTML = TABS.map(([k, ic, l]) => `<button class="${cur === k ? 'on' : ''}" data-tab="${k}">${icon(ic)}<span>${l}</span>${k === 'set' && dot ? '<i class="tdot"></i>' : ''}</button>`).join('');
+  bar.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => go(b.dataset.tab));
+}
+
+function banners() {
+  return `${offline ? '<div class="banner bad"><b>电脑现在不在线</b>：电脑关机、睡眠了，或者上面的轻桥没在运行。电脑一回来这里会自己恢复，不用重新扫码。</div>' : ''}
+    ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
+    ${inWeChat() ? '<div class="banner">现在是在微信里打开的：微信里不能放到主屏幕，复制也常被拦。请点右上角 <b>···</b> → <b>在默认浏览器中打开</b>（Safari），以后都从那边用。</div>' : ''}`;
+}
+
 function render() {
-  setConn(S.pc, true);
-  if (view === 'guide') { renderGuide(); return; }
+  setConn(offline ? '电脑不在线' : S.pc, !offline);
+  drawTabs();
+  if (view === 'wizard') { renderWizard(); return; }
+  if (view === 'hist') { renderHist(); return; }
+  if (view === 'set') { renderSet(); return; }
   const keepText = $('text') ? $('text').value : '';
   const focused = document.activeElement && document.activeElement.id === 'text';
   if (focused) { // 正在输入时只更新剪贴板卡片，不打断输入
     const box = document.querySelector('#clipBox'); if (box) box.innerHTML = clipCard(); bindClip(); return;
   }
-  const tip = isIOS() && !standalone() && localStorage.getItem(K + 'tip') !== '1';
+  const moved = viaRelay && localStorage.getItem(K + 'moved') === '1';
+  const autoTip = isIOS() && !inWeChat() && !S.auto && localStorage.getItem(K + 'tapTip') !== '1';
   $('app').innerHTML = `
-    ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
-    ${inWeChat() ? '<div class="banner">现在是在微信里打开的：微信里不能放到主屏幕，复制也常被拦。请点右上角 <b>···</b> → <b>在默认浏览器中打开</b>（Safari），以后都从那边用。</div>' : ''}
-    ${viaRelay && localStorage.getItem(K + 'moved') === '1' ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。<b>请重新放一次到主屏幕：</b>点 Safari 底部的“分享” → “添加到主屏幕”，再把主屏幕上旧的“轻桥”图标删掉（旧图标只在家里的 Wi-Fi 能用）。${isIOS() ? '设置过“轻点背面”的，点下面“设置轻点背面”，按第 1 步复制新地址替换快捷指令里的旧地址。' : ''}</div>` : ''}
+    ${banners()}
+    ${moved ? `<div class="card tipcard"><div class="ct">${icon('plus')}换成了在哪都能用的地址<button class="btn ghost small" id="movedX" style="margin-left:auto">知道了</button></div>以后手机用流量、在别的 Wi-Fi 也能打开。主屏幕上旧的“轻桥”图标只在家里的 Wi-Fi 能用，请到<b>设置</b>页重新放一次${isIOS() ? '；设过自动同步的，也在那里重新走一遍向导' : ''}。<div class="actions" style="margin-top:10px"><button class="btn soft" data-go="set">去设置页</button></div></div>` : ''}
     <div id="clipBox">${clipCard()}</div>
     ${sendCard()}
-    ${histCard()}
     ${inboxCard()}
-    ${cloudCard()}
-    ${isIOS() && localStorage.getItem(K + 'tapTip') !== '1' ? `<div class="card tipcard"><div class="ct">${icon('hand')}更省事：轻点手机背面<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>设置一次（约 1 分钟），以后手机上复制完<b>轻点背面两下</b>就发到电脑，不用打开这个网页；电脑上复制的也能这样取回手机。还可以设成<b>离开微信等 App 时自动发送</b>，连背面都不用点。<div class="actions" style="margin-top:10px"><button class="btn soft" id="guide2">${icon('hand')}看怎么设置</button></div></div>` : ''}
-    ${tip ? `<div class="card" style="font-size:14px"><div class="ct">${icon('plus')}放到主屏幕<button class="btn ghost small" id="tipX" style="margin-left:auto">知道了</button></div>${homeHow()}以后像 App 一样一点就开，不用再扫码。</div>` : ''}
-    <div class="links">
-      ${!viaRelay && S.relay ? '<button id="roam">离开这个 Wi-Fi 也能用</button>' : ''}
-      ${isIOS() ? '<button id="guide">设置“轻点背面”同步文字</button>' : ''}
-      <button id="forget">断开这台电脑</button>
-    </div>`;
+    ${autoTip ? `<div class="card tipcard"><div class="ct">${icon('bolt')}不想每次都打开这个网页？<button class="btn ghost small" id="tapX" style="margin-left:auto">不用了</button></div>花 2 分钟设一次，以后<b>轻点手机背面两下</b>，电脑刚复制的字就进手机剪贴板，手机刚复制的也发到电脑。<div class="actions" style="margin-top:10px"><button class="btn primary" data-go="wizard">${icon('hand')}带我设置</button></div></div>` : ''}`;
   if ($('text')) $('text').value = keepText;
   bind();
+}
+
+function renderHist() {
+  $('app').innerHTML = `${banners()}${histCard(true) || `<div class="card"><div class="ct">${icon('list')}电脑复制过的</div><div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div></div>`}${cloudCard()}`;
+  bindHist();
+  if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
+  if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
+}
+
+function renderSet() {
+  const ios = isIOS();
+  const autoCard = ios ? `<div class="card">
+      <div class="ct">${icon('bolt')}自动同步<span class="pill ${S.auto ? 'ok' : ''}">${S.auto ? '已设置' : '还没设置'}</span></div>
+      <div class="setp">${S.auto ? `快捷指令“轻桥”上次运行：${when(S.auto)}。轻点背面两下（或你设的自动化）就会两边同步文字。` : '设一次（约 2 分钟），以后<b>轻点手机背面两下</b>：电脑刚复制的字进手机剪贴板，手机刚复制的发到电脑，不用打开这个网页。'}</div>
+      <div class="actions"><button class="btn ${S.auto ? 'line' : 'primary'} big" data-go="wizard">${icon('hand')}${S.auto ? '重新设置 / 换了地址' : '带我一步步设置'}</button></div>
+    </div>` : `<div class="card"><div class="ct">${icon('bolt')}自动同步</div><div class="setp">安卓手机：把这个网页放到主屏幕，打开后点一下屏幕就能拿到电脑刚复制的文字。</div></div>`;
+  const home = standalone() ? '' : `<div class="card"><div class="ct">${icon('plus')}放到主屏幕</div><div class="setp">${homeHow()}以后像 App 一样一点就开，不用再扫码。</div></div>`;
+  $('app').innerHTML = `${banners()}${autoCard}${home}
+    <div class="card">
+      <div class="ct">${icon('phone')}这部手机</div>
+      <div class="kvrow"><span>名字</span><b>${esc(S.me)}</b></div>
+      <div class="kvrow"><span>连着的电脑</span><b>${esc(S.pc)}</b></div>
+      <div class="kvrow"><span>怎么连的</span><b>${viaRelay ? '经中转，在哪个网络都能用' : '同一个 Wi-Fi'}</b></div>
+      <label class="check"><span class="switch"><input type="checkbox" id="quick" ${quickOn() ? 'checked' : ''}><span></span></span>电脑有新文字时，在“传送”页点一下屏幕任意处就复制</label>
+      ${!viaRelay && S.relay ? '<div class="actions"><button class="btn soft" id="roam">换成离开这个 Wi-Fi 也能用的地址</button></div>' : ''}
+      <div class="actions"><button class="btn line" id="forget" style="color:var(--bad)">断开这台电脑</button></div>
+    </div>`;
+  $('quick').onchange = e => localStorage.setItem(K + 'quick', e.target.checked ? '1' : '0');
+  bindCommon();
+}
+
+function bindCommon() {
+  document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { if (b.dataset.go === 'wizard') wzOpen(); else go(b.dataset.go); });
+  if ($('roam')) $('roam').onclick = () => {
+    if (!confirm('换成经中转的地址：手机用流量或在别的 Wi-Fi 也能用。换过去以后，请在新网页里重新“添加到主屏幕”。')) return;
+    location.href = S.relay + '#t=' + encodeURIComponent(token);
+  };
+  if ($('forget')) $('forget').onclick = async () => {
+    if (!confirm('断开后需要重新扫码才能再连。确定？')) return;
+    try { await call('/api/phone/forget', {}); } catch { }
+    localStorage.removeItem(K + 't'); token = ''; alive = false; $('tabbar').hidden = true; document.body.classList.remove('tabbed'); showJoin();
+  };
 }
 
 // 电脑上新复制了文字：回到这个网页后点一下屏幕任意处就进手机剪贴板（iPhone 不让网页不经点按就写剪贴板，这是最省的一步）。
@@ -268,7 +329,6 @@ document.addEventListener('click', e => {
 });
 
 function bindClip() {
-  if ($('quick')) $('quick').onchange = e => { localStorage.setItem(K + 'quick', e.target.checked ? '1' : '0'); render(); };
   const c0 = $('copy'); if (c0) c0.addEventListener('click', () => { if (S.clip && S.clip.kind === 'text') { markCopied(); setTimeout(render, 50); } });
   const c = $('copy');
   if (c) c.onclick = () => { const ok = copyText(S.clip.text); toast(ok ? '已复制，可以去粘贴了' : '复制没成功，长按上面的文字手动复制', !ok); };
@@ -285,13 +345,7 @@ function bind() {
   $('pick').onclick = () => $('files').click();
   $('files').onchange = () => { upload([...$('files').files]); $('files').value = ''; };
   $('toClip').onchange = e => { sendToClip = e.target.checked; localStorage.setItem(K + 'clip', sendToClip ? '1' : '0'); };
-  if ($('tipX')) $('tipX').onclick = () => { localStorage.setItem(K + 'tip', '1'); render(); };
-  bindHist();
   if ($('movedX')) $('movedX').onclick = () => { localStorage.removeItem(K + 'moved'); render(); };
-  if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
-  if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
-  if ($('guide')) $('guide').onclick = () => { view = 'guide'; render(); scrollTo(0, 0); };
-  if ($('guide2')) $('guide2').onclick = () => { view = 'guide'; render(); scrollTo(0, 0); };
   if ($('tapX')) $('tapX').onclick = () => { localStorage.setItem(K + 'tapTip', '1'); render(); };
   if ($('readClip')) $('readClip').onclick = async () => {
     try {
@@ -301,15 +355,7 @@ function bind() {
     // 剪贴板里是图片，或者浏览器没让读：退回粘贴
     $('text').focus(); toast('长按框里 → 粘贴', true);
   };
-  if ($('roam')) $('roam').onclick = () => {
-    if (!confirm('换成经中转的地址：手机用流量或在别的 Wi-Fi 也能用。换过去以后，请在新网页里重新“添加到主屏幕”。')) return;
-    location.href = S.relay + '#t=' + encodeURIComponent(token);
-  };
-  $('forget').onclick = async () => {
-    if (!confirm('断开后需要重新扫码才能再连。确定？')) return;
-    try { await call('/api/phone/forget', {}); } catch { }
-    localStorage.removeItem(K + 't'); token = ''; alive = false; showJoin();
-  };
+  bindCommon();
 }
 
 async function sendText(v) {
@@ -353,7 +399,9 @@ async function upload(files, cloud) {
 }
 function refreshUps() { const el = $('ups'); if (el) el.innerHTML = upsHtml(); const c = $('cups'); if (c) c.innerHTML = upsHtml(true); }
 
-// ───────────── 轻点背面（快捷指令） ─────────────
+// ───────────── iPhone 自动同步向导（快捷指令 + 轻点背面） ─────────────
+// 苹果不让网页替用户装快捷指令（要 iCloud 链接或 Mac 签名），所以做成一步一屏：
+// 每步一个大按钮直接跳到该去的 App，回来后网页自己看电脑收没收到，收到了才打勾。
 
 // 快捷指令用哪个地址：有中转用中转（在哪都能用）；局域网里先试电脑名字（换 IP 也不用改），手机解析不了再用 IP。
 let guideHost = null;
@@ -365,54 +413,109 @@ async function pickHost() {
     const ok = await Promise.race([fetch(u + 'favicon.ico?probe=' + Date.now(), { mode: 'no-cors', cache: 'no-store' }).then(() => true, () => false), sleep(2500).then(() => false)]);
     if (ok) return { url: u, how: '用的是电脑的名字，电脑换了 IP 也不用改' };
   }
-  return { url: location.origin + '/', how: '用的是电脑现在的 IP。电脑换了网络后，回这里复制新地址替换' };
+  return { url: location.origin + '/', how: '用的是电脑现在的 IP。电脑换了网络后要回来重新设置' };
 }
 
-function renderGuide() {
+// 走到第几步、进这一步时电脑记的“上次运行时间”：跳去别的 App 再回来（网页可能被系统重新加载）还接着走。
+let wz = (() => { try { return JSON.parse(localStorage.getItem(K + 'wz')) || null; } catch { return null; } })();
+const WZ = ['开始', '建快捷指令', '试一下', '轻点背面', '全自动'];
+function wzSave() { localStorage.setItem(K + 'wz', JSON.stringify(wz)); }
+function wzOpen() { if (!wz || wz.i >= WZ.length) wz = { i: 0, base: S.auto || 0 }; wzSave(); go('wizard'); }
+function wzGo(i) { wz = { i, base: S.auto || 0 }; wzSave(); render(); scrollTo(0, 0); }
+function wzClose() { localStorage.removeItem(K + 'wz'); wz = null; go('set'); }
+// 进这一步之后快捷指令又运行过 = 电脑收到了
+const wzHit = () => !!(wz && S.auto && S.auto !== wz.base);
+
+function wzCheck(waiting, done) {
+  return wzHit()
+    ? `<div class="wzok">${icon('check')}<div><b>电脑收到了</b>${done}</div></div>`
+    : `<div class="wzwait"><span class="spin"></span><div>${waiting}</div></div>`;
+}
+
+function renderWizard() {
+  if (!wz) wz = { i: 0, base: S.auto || 0 };
   const host = guideHost || { url: viaRelay ? location.origin + BASE : location.origin + '/', how: '正在检查哪个地址能用…' };
   // 授权放在地址里，快捷指令就不用另外加“头部”。
   const url = host.url + 'v1/swap?t=' + encodeURIComponent(token);
-  $('app').innerHTML = `<button class="back" id="back">${icon('back')}返回</button>
-    <div class="card guide">
-      <div class="ct">${icon('hand')}轻点手机背面两下，同步文字</div>
-      <p class="lead">设置一次（约 2 分钟）。以后手机上复制完<b>轻点背面两下</b>，电脑上就能 Ctrl+V；电脑上刚复制的文字，也是轻点两下就到手机。</p>
-      <div class="step0">
-        <div><b>先复制这个地址</b>（里面带着这部手机的授权，别发给别人）</div>
-        <div class="kv"><code>${esc(url)}</code><button class="btn primary small" data-copy="${esc(url)}">${icon('copy')}复制</button></div>
-        <div class="hint" style="margin-top:4px">${esc(host.how)}</div>
+  const i = wz.i, last = WZ.length - 1;
+  let body, next = '下一步', nextOk = true, skip = '';
+  if (i === 0) {
+    body = `<h2>设一次，以后不用打开网页</h2>
+      <div class="wzflow">
+        <div><span>${icon('laptop')}</span>电脑上复制<em>→</em><span>${icon('hand')}</span>轻点手机背面两下<em>→</em><span>${icon('phone')}</span>手机上粘贴</div>
+        <div><span>${icon('phone')}</span>手机上复制<em>→</em><span>${icon('hand')}</span>轻点手机背面两下<em>→</em><span>${icon('laptop')}</span>电脑上 Ctrl+V</div>
       </div>
-      <div class="sub">在“快捷指令”App 里新建</div>
-      <ol>
-        <li>打开<b>快捷指令</b> App，点右上角 <b>+</b>。<div class="warn">下面会列出“下一个操作建议”（比如微信的“发送信息”），<b>不要点</b>，只用底部的搜索框。</div></li>
-        <li>点底部<b>“搜索操作”</b>，输入<b>剪贴板</b>，点<b>“获取剪贴板”</b>。</li>
-        <li>再点“搜索操作”，输入 <b>URL</b>，点<b>“获取 URL 内容”</b>。</li>
-        <li>点这一步里蓝色的 <b>URL</b>，<b>粘贴</b>刚才复制的地址。</li>
-        <li>点这一步右边的 <b>⌄</b>（或“显示更多”）展开：<b>方法</b>改成 <b>POST</b>；<b>请求体</b>选<b>文件</b>；点下面的“文件”，选<b>“剪贴板”</b>（第 2 步的结果）。</li>
-        <li>再搜索<b>拷贝</b>，点<b>“拷贝至剪贴板”</b>。它会自动拷贝“URL 的内容”，不用改。</li>
-        <li>点最上面的名字（例如“获取剪贴板 ⌄”）→ <b>重新命名</b>，改成<b>轻桥</b>，点<b>完成</b>。</li>
+      <p class="wzp">靠的是 iPhone 自带的<b>“快捷指令”</b>App。苹果不让网页替你自动装，所以要照着点几下——<b>每一步都有按钮带你跳过去，做完回到这里，我会告诉你成没成</b>。大约 2 分钟。</p>
+      ${inWeChat() ? '<div class="banner">请先换到 Safari 里打开再设置（微信里跳不到快捷指令）。</div>' : ''}`;
+    next = '开始';
+  } else if (i === 1) {
+    body = `<h2>第 1 步 · 新建快捷指令</h2>
+      <a class="btn primary big wzjump" id="wzMake" href="shortcuts://create-shortcut">${icon('copy')}复制地址，并打开“快捷指令”</a>
+      <div class="hint" style="text-align:center">${esc(host.how)}。地址里带着这部手机的授权，别发给别人。</div>
+      <p class="wzp">跳过去以后是一张空白的新快捷指令。<b>只用底部的搜索框</b>（上面推荐的那些不要点），加 3 个操作：</p>
+      <ol class="wzlist">
+        <li>搜 <kbd>剪贴板</kbd> → 点 <b>获取剪贴板</b></li>
+        <li>搜 <kbd>URL</kbd> → 点 <b>获取 URL 内容</b> → 点里面蓝色的 <b>URL</b> → <b>粘贴</b>（地址已经替你复制好了）</li>
+        <li>点这一条右边的 <b>⌄</b> 展开 → <b>方法</b>选 <b>POST</b> → <b>请求体</b>选<b>文件</b> → 点下面的“文件” → 选<b>剪贴板</b></li>
+        <li>搜 <kbd>拷贝</kbd> → 点 <b>拷贝至剪贴板</b></li>
+        <li>点最上面的名字 → <b>重新命名</b> → 改成 <kbd>轻桥</kbd> → 右上角<b>完成</b></li>
       </ol>
-      <div class="sub">让背面轻点两下运行它</div>
-      <ol start="8">
-        <li>打开 iPhone <b>设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下</b>，往下翻到“快捷指令”，选<b>轻桥</b>。</li>
+      <div class="wzmockt">做完应该长这样：</div>
+      <div class="wzmock">
+        <div class="mk"><i class="mi y">${icon('copy')}</i>获取剪贴板</div>
+        <div class="mk"><i class="mi g">${icon('link')}</i><div>获取 <u>${esc(host.url.replace(/^https?:\/\//, '').slice(0, 18))}…</u> 的内容<small>方法 <b>POST</b>　请求体 <b>文件</b>　文件 <u>剪贴板</u></small></div></div>
+        <div class="mk"><i class="mi y">${icon('copy')}</i>将 <u>URL 的内容</u> 拷贝至剪贴板</div>
+      </div>
+      <details class="wzfold"><summary>没跳过去 / 想自己复制地址</summary><div class="kv"><code>${esc(url)}</code><button class="btn soft small" data-copy="${esc(url)}">${icon('copy')}复制</button></div><div class="hint">手动打开“快捷指令”App，点右上角 <b>+</b>，再照上面做。找不到这个 App 就去 App Store 搜“快捷指令”装回来（苹果自己出的，免费）。</div></details>`;
+    next = '建好了，去试一下';
+  } else if (i === 2) {
+    body = `<h2>第 2 步 · 试一下</h2>
+      <p class="wzp">点下面的按钮运行一次。第一次会问<b>“允许‘轻桥’连接到…”</b>和<b>“允许粘贴”</b>，都点<b>允许</b>。运行完回到这个网页。</p>
+      <a class="btn primary big wzjump" href="shortcuts://run-shortcut?name=${encodeURIComponent('轻桥')}">${icon('play')}运行“轻桥”</a>
+      ${wzCheck('等电脑收到…（运行完回到这里）', '，快捷指令没问题。')}
+      ${wzHit() ? '' : `<details class="wzfold"><summary>等了一会还没打勾？</summary><div class="hint">
+        · 提示<b>找不到快捷指令</b>：名字要一字不差叫 <b>轻桥</b>。<br>
+        · 提示<b>连接失败</b>：${viaRelay || S.relay ? '看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}<br>
+        · 没报错也没打勾：回上一步对照“做完应该长这样”，多半是第 3 条的 <b>POST / 文件 / 剪贴板</b>没选上，或 URL 没粘贴完整。</div></details>`}`;
+    nextOk = wzHit(); skip = '先跳过';
+  } else if (i === 3) {
+    body = `<h2>第 3 步 · 让“轻点背面两下”运行它</h2>
+      <p class="wzp">这一步在 iPhone 的<b>设置</b>里（苹果不让网页直接跳到这一页，要自己点进去）：</p>
+      <div class="wzpath"><span>设置</span><span>辅助功能</span><span>触控</span><span>轻点背面</span><span>轻点两下</span><span class="on">轻桥</span></div>
+      <div class="hint">“轻点背面”在“触控”页的<b>最下面</b>；“轻桥”在列表<b>往下翻</b>的“快捷指令”一栏里。也可以在设置顶部的搜索框直接搜 <b>轻点背面</b>。</div>
+      <p class="wzp">设好以后回到这里，<b>用手指在手机背面敲两下</b>（戴厚壳的敲重一点）：</p>
+      ${wzCheck('等你敲两下…', '，轻点背面两下可以用了。')}`;
+    nextOk = wzHit(); skip = '先跳过';
+  } else {
+    body = `<h2>可选 · 连敲都不用敲</h2>
+      <p class="wzp">让 iPhone 在你<b>打开或离开</b>微信这类 App 时自己运行“轻桥”：电脑刚复制的字，打开微信时已经在剪贴板里了。（iOS 17 及以上）</p>
+      <a class="btn soft big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
+      <ol class="wzlist">
+        <li>底部点 <b>自动化</b> → 右上角 <b>+</b>（第一次是“新建自动化”）</li>
+        <li>往下找到 <b>App</b> → 点<b>选取</b>，勾上常用的（微信、备忘录、Safari……）→ 完成</li>
+        <li><b>已打开</b>、<b>已关闭</b>都勾上 → 选<b>立即运行</b> → 下一步</li>
+        <li>在列表里点 <b>轻桥</b>（不要点“新建空白自动化”）</li>
       </ol>
-      <div class="hint">试一下：在别的 App 里复制一段字，轻点背面两下，电脑上按 Ctrl+V。第一次可能弹“允许粘贴”，点允许。<br>
-        ${S.relay || viaRelay ? '' : '手机和电脑要在同一个 Wi-Fi。'}弄错了就在快捷指令里删掉“轻桥”，从第 1 步重来。</div>
-    </div>
-    <div class="card guide">
-      <div class="ct">${icon('refresh')}连背面都不想点？（可选，iOS 17 及以上）</div>
-      <p class="lead">在微信等 App 里复制完，<b>切到别的 App 时</b>自动运行“轻桥”。</p>
-      <ol>
-        <li>快捷指令 App 底部点<b>“自动化”</b>，再点右上角 <b>+</b>（第一次是中间的“新建自动化”）。</li>
-        <li>往下找到<b>“App”</b>，点进去。</li>
-        <li>“App”那一行点<b>“选取”</b>，勾上常复制东西的 App（微信、Safari、备忘录……），点<b>完成</b>。</li>
-        <li>勾<b>“已关闭”</b>、取消“已打开”；下面选<b>“立即运行”</b>（“运行时通知”可以关掉），点右上角<b>下一步</b>。</li>
-        <li>在“我的快捷指令”里点<b>轻桥</b>（不要点“新建空白自动化”）。</li>
-      </ol>
-      <div class="hint">之后每次离开这些 App 都会运行一次：手机刚复制的就发到电脑（不会被电脑上的覆盖）；手机没复制新东西、电脑 5 分钟内复制过文字的，放进手机剪贴板；都没有就什么也不变。如果每次都问“允许粘贴”：打开 iPhone 设置 → 快捷指令 → 从其他 App 粘贴 → 允许。</div>
+      <div class="hint">每次都问“允许粘贴”的话：iPhone 设置 → App → 快捷指令 → 从其他 App 粘贴 → 允许。不想要了，在“自动化”里左滑删除。</div>`;
+    next = '完成';
+  }
+  const html = `${banners()}
+    <div class="wzhead"><button class="back" id="wzBack">${icon('back')}${i === 0 ? '返回' : '上一步'}</button><div class="wzdots">${WZ.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div><button class="back" id="wzQuit">退出向导</button></div>
+    <div class="card wz">${body}
+      <div class="actions wznav"><button class="btn primary big" id="wzNext" ${nextOk ? '' : 'disabled'}>${next}</button></div>
+      ${skip && !nextOk ? `<button class="wzskip" id="wzSkip">${skip}</button>` : ''}
     </div>`;
-  $('back').onclick = () => { view = 'main'; render(); };
+  // 状态没变就不重画：免得把用户展开的“没成功怎么办”又收回去
+  if (renderWizard.last === html && $('wzNext')) return;
+  renderWizard.last = html; $('app').innerHTML = html;
+  $('wzBack').onclick = () => i === 0 ? wzClose() : wzGo(i - 1);
+  $('wzQuit').onclick = wzClose;
+  $('wzNext').onclick = () => { if (i === last) { toast('设置好了'); wzClose(); } else wzGo(i + 1); };
+  if ($('wzSkip')) $('wzSkip').onclick = () => wzGo(i + 1);
+  // 先把地址放进手机剪贴板（这一下点按就是苹果要的“用户操作”），再让链接跳去快捷指令。
+  if ($('wzMake')) $('wzMake').addEventListener('click', () => { toast(copyText(url) ? '地址已复制，正在打开快捷指令…' : '没复制上，展开下面手动复制', false); });
   document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => toast(copyText(b.dataset.copy) ? '已复制' : '复制没成功，长按手动复制', false));
-  if (!guideHost && !renderGuide.busy) { renderGuide.busy = true; pickHost().then(h => { guideHost = h; renderGuide.busy = false; if (view === 'guide') renderGuide(); }); }
+  if (!guideHost && !renderWizard.busy) { renderWizard.busy = true; pickHost().then(h => { guideHost = h; renderWizard.busy = false; if (view === 'wizard') renderWizard(); }); }
 }
 
 boot();

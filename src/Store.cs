@@ -24,6 +24,8 @@ public sealed class Phone {
  public string imageHash;
  /// <summary>上一次快捷指令带来的手机剪贴板（哈希）和时间：用来判断手机这次是不是“刚复制的”。</summary>
  public string lastReport; public long lastReportAt;
+ /// <summary>这部手机的快捷指令上次运行的时间（0 = 还没设置过自动同步）。</summary>
+ public long swapAt;
 }
 
 public sealed class Config {
