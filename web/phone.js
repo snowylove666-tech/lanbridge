@@ -94,6 +94,9 @@ async function loop() {
       }
       offline = false;
       S = await r.json(); rev = S.rev; first = false;
+      // 电脑上的轻桥升级了：网页换成新版（每个版本只刷一次，免得来回刷）
+      const pv = (document.querySelector('meta[name=lb-ver]') || {}).content;
+      if (pv && S.ver && S.ver !== pv && sessionStorage.getItem('lb-reloaded') !== S.ver) { sessionStorage.setItem('lb-reloaded', S.ver); alive = false; location.reload(); return; }
       if (!viaRelay && S.relay) { alive = false; location.replace(S.relay + '#t=' + encodeURIComponent(token) + '&moved=1'); return; }
       render();
       refreshCloud(); refreshHist();
@@ -537,12 +540,26 @@ function renderWizard() {
         · 提示<b>网络连接已中断</b>：再运行一次；${viaRelay || S.relay ? '还不行就看看手机是不是开着代理 / 加速器，先关掉再试。' : '手机和电脑要在同一个 Wi-Fi。'}</div></details>`}`;
     nextOk = wzHit(); skip = '先跳过';
   } else {
-    const trig = TRIGS.find(t => t[0] === wzTrig()) || TRIGS[0];
-    body = `<h2>第 3 步 · 平时怎么运行它</h2>
-      <p class="wzp">挑一种顺手的（可以以后回来换，也可以都设）：</p>
-      <div class="trigs">${TRIGS.map(t => `<button class="trig ${t === trig ? 'on' : ''}" data-trig="${t[0]}"><b>${t[1]}</b><small>${t[2]}</small></button>`).join('')}</div>
-      <div class="trigbody">${trig[3]}</div>
-      ${wzCheck(trig[4], '，以后就这样用。')}`;
+    const others = TRIGS.filter(t => t[0] !== 'auto'), trig = others.find(t => t[0] === wzTrig()) || null;
+    body = `<h2>第 3 步 · 设成自动运行</h2>
+      <p class="wzp">设好以后什么都不用按：<b>电脑上复制 → 打开微信就能粘贴</b>；<b>微信里复制 → 切走就到了电脑</b>。</p>
+      <a class="btn primary big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
+      <ol class="wzlist">
+        <li>点屏幕<b>最下面</b>的 <b>自动化</b></li>
+        <li>点右上角 <b>+</b>（第一次用是屏幕中间的<b>新建自动化</b>）</li>
+        <li>往下翻，点 <b>App</b></li>
+        <li>点 <b>选取</b> → 勾上 <b>微信</b>（备忘录、Safari 想要也勾上）→ 右上角 <b>完成</b></li>
+        <li>勾上 <b>已打开</b> 和 <b>已关闭</b>，下面选 <b>立即运行</b>，<b>运行时通知</b>关掉 → 右上角 <b>下一步</b></li>
+        <li>在列表里点 <b>轻桥</b>，就设好了</li>
+      </ol>
+      <div class="wzmockt">设好后“自动化”里会多一条：</div>
+      <div class="wzmock"><div class="mk"><i class="mi b">${icon('bolt')}</i><div>打开或关闭“微信”时<small>立即运行　<u>轻桥</u></small></div></div></div>
+      ${wzCheck('设好后打开一次微信，再回到这里…', '，以后打开、离开微信都会自动同步。')}
+      <details class="wzfold" ${trig ? 'open' : ''}><summary>不想自动？换成按一下运行</summary>
+        <div class="hint" style="margin:6px 0 8px">最省事的不用设置：直接说 <b>“嘿 Siri，轻桥”</b>。下面几种都不会在屏幕上加小圆点：</div>
+        <div class="trigs">${others.map(t => `<button class="trig ${t === trig ? 'on' : ''}" data-trig="${t[0]}"><b>${t[1]}</b><small>${t[2]}</small></button>`).join('')}</div>
+        ${trig ? `<div class="trigbody">${trig[3]}</div>` : ''}
+      </details>`;
     next = '完成'; nextOk = wzHit(); skip = '先完成，以后再试';
   }
   const html = `${banners()}

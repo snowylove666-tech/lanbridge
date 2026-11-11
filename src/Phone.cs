@@ -143,7 +143,7 @@ sealed class PhoneHub {
  public object State(Phone p, long since) {
   long rev = since > 0 ? changes.Wait(since, 25000) : changes.Rev;
   lock (Gate) p.seen = Util.Ms();
-  return new { rev, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), auto = p.swapAt, bad = p.swapBadAt > p.swapAt ? new { kind = p.swapBad, at = p.swapBadAt } : null, hist = app.ClipLog.Rev, inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
+  return new { rev, ver = Program.Version, pc = C.deviceName, paused = C.paused, me = p.name, mdns = app.MdnsName, port = app.Opt.Port, relay = app.Relay.Ready ? app.Relay.PhoneUrl : null, clip = ClipView(p), auto = p.swapAt, bad = p.swapBadAt > p.swapAt ? new { kind = p.swapBad, at = p.swapBadAt } : null, hist = app.ClipLog.Rev, inbox = Inbox(p), cloud = app.Cloud.Ready ? app.Cloud.Rev : -1 };
  }
 
  object ClipView(Phone p) {

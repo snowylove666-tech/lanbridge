@@ -364,6 +364,7 @@ sealed class Router {
   string file = p == "/" ? "phone.html" : p == "/desk" ? "desk.html" : p.StartsWith("/assets/") ? p.Substring(8) : null;
   if (file == null || file.Contains("/") || file.Contains("..")) throw new ApiError(404, "没有这个页面");
   var bytes = Embedded.Resource("web/" + file) ?? throw new ApiError(404, "没有这个页面");
+  if (file == "phone.html") bytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(bytes).Replace("<meta charset=\"utf-8\">", "<meta charset=\"utf-8\"><meta name=\"lb-ver\" content=\"" + Program.Version + "\">"));
   string ext = Path.GetExtension(file);
   string type = ext switch { ".html" => "text/html; charset=utf-8", ".js" => "application/javascript; charset=utf-8", ".css" => "text/css; charset=utf-8", ".svg" => "image/svg+xml", ".json" => "application/manifest+json", ".png" => "image/png", _ => "application/octet-stream" };
   var headers = ext == ".html" ? new Dictionary<string, string> { ["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'" } : null;
