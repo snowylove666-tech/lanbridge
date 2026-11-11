@@ -456,8 +456,8 @@ const TRIGS = [
       <li>搜 <kbd>快捷指令</kbd> → 点它 → 选 <b>轻桥</b> → 点空白处完成</li>
     </ol>
     <div class="hint">锁屏底部的两个按钮也能换成它：长按锁屏 → 自定 → 锁定屏幕 → 点底部按钮 → 快捷指令 → 轻桥。（iOS 18 及以上）</div>`, '设好后在控制中心点一下“轻桥”，再回到这里…'],
-  ['back', '轻点背面', '手机背面敲两下或三下', `<div class="wzpath"><span>设置</span><span>辅助功能</span><span>触控</span><span>轻点背面</span><span>轻点两下（或三下）</span><span class="on">轻桥</span></div>
-    <div class="hint">“轻点背面”在“触控”页最下面；“轻桥”在列表往下翻的“快捷指令”一栏里。戴厚壳的敲重一点。</div>`, '设好后在手机背面敲一下试试，再回到这里…'],
+  ['back', '轻点背面', '手机背面敲两下或三下（屏幕上不加小圆点）', `<div class="wzpath"><span>设置</span><span>辅助功能</span><span>触控</span><span>轻点背面</span><span>轻点两下（或三下）</span><span class="on">轻桥</span></div>
+    <div class="hint">“轻点背面”在“触控”页<b>最下面</b>。它和上面的<b>“辅助触控”</b>不是一回事：辅助触控才是屏幕上那个小圆点，<b>不用打开</b>；轻点背面屏幕上什么都不加。“轻桥”在列表往下翻的“快捷指令”一栏里。戴厚壳的敲重一点。</div>`, '设好后在手机背面敲一下试试，再回到这里…'],
 ];
 function wzSave() { localStorage.setItem(K + 'wz', JSON.stringify(wz)); }
 const badAt = () => (S.bad && S.bad.at) || 0;
