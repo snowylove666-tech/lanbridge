@@ -366,7 +366,7 @@ sealed class PhoneHub {
   string type = q.H("Content-Type").ToLowerInvariant();
   // 请求体选成了 JSON / 表单：手机剪贴板根本没发过来，别把“{}”当文字放进电脑剪贴板
   if (type.StartsWith("application/json") || type.StartsWith("multipart/") || type.StartsWith("application/x-www-form-urlencoded")) { SwapBad(p, "body", res); return; }
-  lock (Gate) { bool first = p.swapAt == 0; p.swapAt = Util.Ms(); if (first) app.Save(); }
+  long prevAt; lock (Gate) { prevAt = p.swapAt; bool first = p.swapAt == 0; p.swapAt = Util.Ms(); if (first) app.Save(); }
   changes.Bump(); app.Changes.Bump();   // 手机上的设置向导在等这一下：“电脑收到了”
   if (type.StartsWith("image/")) {
    var bytes = q.ReadAll(64 * 1024 * 1024);
@@ -382,6 +382,8 @@ sealed class PhoneHub {
    return;
   }
   string text = q.Length > 0 ? new UTF8Encoding(false, false).GetString(q.ReadAll(4 * 1024 * 1024)) : "";
+  // 发来的正文就是轻桥自己的地址：“URL”那一格其实是蓝色的“剪贴板”变量（刚好剪贴板里是地址才连得上）
+  if (text.Contains("/v1/swap?t=")) { lock (Gate) p.swapAt = prevAt; SwapBad(p, "urlvar", res); return; }
   lock (Gate) if (!p.init) { p.init = true; p.baseline = ""; }
   var r = Decide(p, text, "smart", true);
   res.Text(r.text);
@@ -391,7 +393,9 @@ sealed class PhoneHub {
  public void SwapBad(Phone p, string kind, Res res) {
   lock (Gate) { p.swapBad = kind; p.swapBadAt = Util.Ms(); }
   changes.Bump(); app.Changes.Bump();
-  res.Text(kind == "get"
+  res.Text(kind == "urlvar"
+   ? "轻桥：快捷指令里“URL”那一格是蓝色的“剪贴板”，不是地址。点那一格 → 清除变量；再长按那一格 → 点黑色小菜单里的“粘贴”（不要点键盘上方那排里的“剪贴板”）。"
+   : kind == "get"
    ? "轻桥：快捷指令还差一步——“获取 URL 内容”的“方法”要选 POST，“请求体”选“文件”，文件选“剪贴板”。"
    : "轻桥：快捷指令还差一步——“获取 URL 内容”的“请求体”要选“文件”（不是 JSON 或表单），文件选“剪贴板”。");
  }
