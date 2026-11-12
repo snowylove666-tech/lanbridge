@@ -335,7 +335,7 @@ sealed class PhoneHub {
   string sha = Crypto.Sha(text);
   lock (Gate) {
    long now = Util.Ms();
-   pcNew = latest?.kind == "text" && latest.id != p.lastClip && latest.via != p.name && now - latest.stamp < 5 * 60 * 1000;
+   pcNew = latest?.kind == "text" && latest.id != p.lastClip && latest.via != p.name && now - latest.stamp < 30 * 60 * 1000;   // 自动化一打开 App 就运行：电脑半小时内复制、手机还没拿过的都给
    if (mode == "receive") pcNew = latest?.kind == "text";
    pcRecent = pcNew && now - latest.stamp < 60000;
    fresh = p.lastReportAt > 0 && now - p.lastReportAt < 10 * 60 * 1000 && sha != p.lastReport;
@@ -345,10 +345,14 @@ sealed class PhoneHub {
   if (phoneNew && pcNew && latest.text == text) { lock (Gate) { p.baseline = sha; p.lastClip = latest.id; app.Save(); } return ("noop", text, "", "两边已经一样了。"); }
   if (phoneNew && (fresh || !pcRecent)) {
    TextIn(p, new Dictionary<string, object> { ["text"] = text });
+   // 发过去的就算两边同步过了：以前没记，手机剪贴板里同一段旧字每次运行都被当成“新的”发回电脑，
+   // 把电脑上刚复制的盖掉（自动化每次打开 App 都运行，就再也拿不到电脑的内容）
+   lock (Gate) { p.baseline = sha; app.Save(); }
+   Log.Write("快捷指令：手机的文字发到了电脑");
    return ("sent", text, "", "已发到电脑，可以直接粘贴。");
   }
   if (pcNew) {
-   if (autoAck) { lock (Gate) { p.baseline = Crypto.Sha(latest.text); p.lastClip = latest.id; p.init = true; app.Save(); } return ("receive", latest.text, "", "已取回电脑上的文字。"); }
+   if (autoAck) { lock (Gate) { p.baseline = Crypto.Sha(latest.text); p.lastClip = latest.id; p.init = true; app.Save(); } Log.Write("快捷指令：电脑的文字给了手机"); return ("receive", latest.text, "", "已取回电脑上的文字。"); }
    string receipt = Crypto.Token(10);
    lock (Gate) { receipts[receipt] = (latest.text, latest.id, Util.Ms() + 120000); foreach (var k in receipts.Where(x => x.Value.until < Util.Ms()).Select(x => x.Key).ToList()) receipts.Remove(k); }
    return ("receive", latest.text, receipt, "已取回电脑上的文字。");
