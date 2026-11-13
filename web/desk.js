@@ -1,4 +1,4 @@
-// 轻桥 2.0 · 电脑界面
+﻿// 轻桥 2.0 · 电脑界面
 const hash = new URLSearchParams(location.hash.slice(1));
 const TOKEN = hash.get('t') || sessionStorage.getItem('lbt') || '';
 if (hash.get('t')) { sessionStorage.setItem('lbt', TOKEN); history.replaceState(null, '', '/desk'); }
@@ -100,7 +100,7 @@ function renderTop() {
   $('sync').className = 'sync' + (p ? ' paused' : '');
   set($('sync'), p ? `${icon('pause')}同步已暂停` : `<i class="dot ${online || relayOk ? 'on' : ''}"></i>${parts.join(' · ')}`);
   $('sync').title = p ? '点一下恢复' : '点一下暂停全部同步';
-  set($('rfoot'), `<span>轻桥 ${esc(S.version || '')}</span>`);
+  set($('rfoot'), `<span>PrismBlue 轻桥 ${esc(S.version || '')}<br>Prism 出品</span>`);
 }
 
 function renderRequests() {
@@ -137,7 +137,7 @@ function devSub(d) {
 
 function mapPos(i, n) {
   // 从正上方开始顺时针排；人多时圈放大一点
-  const a = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / n, rx = n > 8 ? 230 : 200, ry = 165;
+  const a = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / n, rx = n > 8 ? 250 : 220, ry = 130;
   return `left:calc(50% + ${Math.round(Math.cos(a) * rx)}px);top:calc(50% + ${Math.round(Math.sin(a) * ry)}px)`;
 }
 function renderDevices() {

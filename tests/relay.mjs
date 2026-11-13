@@ -144,7 +144,8 @@ async function main() {
   ok(redirect.status === 301 && redirect.headers.get('location') === '/m/' + aId + '/', '短地址自动补上斜杠');
   const page = await (await fetch(M + '/')).text();
   ok(page.includes('assets/phone.js') && !page.includes('"/assets/'), '手机网页经中转能打开（资源用相对地址）');
-  ok((await fetch(M + '/assets/phone.js')).ok && (await fetch(M + '/assets/manifest.json')).ok && (await fetch(M + '/apple-touch-icon.png')).ok, '网页的脚本、图标都能经中转加载');
+  const okRead = async u => { const r = await fetch(u); await r.arrayBuffer(); return r.ok; };  // 中转对手机回 Connection: close，响应要读完
+  ok(await okRead(M + '/assets/phone.js') && await okRead(M + '/assets/manifest.json') && await okRead(M + '/apple-touch-icon.png'), '网页的脚本、图标都能经中转加载');
   const sA = await state(A);
   ok(sA.pair.relayUrl === R.url + '/m/' + aId + '/', '电脑上的二维码用中转地址', sA.pair.relayUrl);
   const pair = (await test(A, 'info')).pair;

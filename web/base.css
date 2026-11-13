@@ -1,9 +1,10 @@
-/* 轻桥 2.0 · 电脑界面和手机网页共用的样式基础 */
+﻿/* PrismBlue 轻桥 · 电脑界面和手机网页共用的样式基础 */
 :root {
-  --bg: #f6f5f2; --panel: #ffffff; --panel2: #fbfaf8; --ink: #1d1d1f; --ink2: #4d4a45; --muted: #8b877f; --faint: #b7b3ab;
-  --line: #e9e6e0; --line2: #f1efea; --hover: #f3f1ed;
-  --accent: #3d6bf5; --accent2: #2f5ae0; --accent-soft: #edf2ff; --accent-ink: #ffffff;
-  --teal: #19a99a; --ok: #1e9e5a; --ok-soft: #e7f6ee; --warn: #c27a0a; --warn-soft: #fdf3e2; --bad: #d1453b; --bad-soft: #fdecea;
+  /* Prism 家族配色（和 PrismShop、Prism 各站一致）：暖纸底、墨色字、Prism 红做强调 */
+  --bg: #f6f3ec; --panel: #fffdf8; --panel2: #fbf8f1; --ink: #1d1b17; --ink2: #4a453d; --muted: #7a7366; --faint: #b3ab9c;
+  --line: #e7e0d2; --line2: #f0eadf; --hover: #f2ede3;
+  --accent: #e0482a; --accent2: #c73c20; --accent-soft: #fbe6df; --accent-ink: #ffffff;
+  --teal: #2e6e8e; --ok: #3f8a5a; --ok-soft: #e6f2e9; --warn: #b0761e; --warn-soft: #f9efdc; --bad: #b42318; --bad-soft: #fbe4e1;
   --radius: 14px; --radius-s: 10px;
   --shadow: 0 1px 2px rgba(30, 25, 15, .04), 0 4px 16px rgba(30, 25, 15, .05);
   --shadow-l: 0 2px 6px rgba(30, 25, 15, .06), 0 18px 48px rgba(30, 25, 15, .14);
@@ -13,9 +14,9 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1c1e; --panel: #262628; --panel2: #2b2b2e; --ink: #f2f1ee; --ink2: #cfccc5; --muted: #95918a; --faint: #66635e;
-    --line: #38383c; --line2: #313134; --hover: #303033;
-    --accent: #6d8fff; --accent2: #86a2ff; --accent-soft: #263055; --accent-ink: #0d1430;
+    --bg: #141310; --panel: #1d1b17; --panel2: #23201b; --ink: #f3efe6; --ink2: #cfc8ba; --muted: #978f81; --faint: #5e584e;
+    --line: #34302a; --line2: #2a2722; --hover: #2c2924;
+    --accent: #ff6a4a; --accent2: #ff8467; --accent-soft: #3d2219; --accent-ink: #1d0a05; --teal: #5aa6c8;
     --ok: #4cc488; --ok-soft: #1d3a2a; --warn: #e3a643; --warn-soft: #3d3020; --bad: #f07067; --bad-soft: #42221f;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3); --shadow-l: 0 10px 40px rgba(0, 0, 0, .5);
     color-scheme: dark;
@@ -32,7 +33,7 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .mono { font-family: var(--mono); font-size: .92em; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 9px; font-weight: 600; font-size: 13.5px; white-space: nowrap; transition: background .15s, box-shadow .15s, color .15s; user-select: none; }
-.btn.primary { background: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(40, 70, 200, .25); }
+.btn.primary { background: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(224, 72, 42, .28); }
 .btn.primary:hover { background: var(--accent2); }
 .btn.soft { background: var(--accent-soft); color: var(--accent); }
 .btn.soft:hover { filter: brightness(.97); }

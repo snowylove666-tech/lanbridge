@@ -120,7 +120,7 @@ sealed class RelayServer : IDisposable {
  }
 
  const string OfflinePage = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>轻桥</title>"
-  + "<style>body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f6f5f2;color:#1d1d1f;display:grid;place-items:center;min-height:100vh}"
+  + "<style>body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f6f3ec;color:#1d1b17;display:grid;place-items:center;min-height:100vh}"
   + "@media(prefers-color-scheme:dark){body{background:#1c1c1e;color:#f2f1ee}.c{background:#262628!important}}"
   + ".c{margin:20px;max-width:420px;padding:28px 22px;border-radius:18px;background:#fff;text-align:center;box-shadow:0 2px 14px rgba(0,0,0,.06)}h1{font-size:20px;margin:0 0 10px}p{margin:8px 0;color:#8b877f;font-size:14.5px}"
   + "ul{text-align:left;font-size:14.5px;padding-left:22px;margin:12px 0}button{margin-top:14px;width:100%;height:46px;border:0;border-radius:12px;background:#3d6bf5;color:#fff;font-size:16px}</style></head>"
