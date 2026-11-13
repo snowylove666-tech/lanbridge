@@ -12,6 +12,7 @@
 <header class="top">
   <img class="logo" src="/assets/icon.svg" alt="">
   <div class="brand">轻桥</div>
+  <nav class="dtabs" id="dtabs"><button data-page="home">主页</button><button data-page="feed">动态<i id="feedBadge" class="hide"></i></button></nav>
   <button class="me" id="me" title="点一下改名字"><span class="me-label">本机</span><b id="meName">…</b></button>
   <div class="grow"></div>
   <button class="sync" id="sync"></button>
@@ -30,6 +31,7 @@
     <div class="sec-head"><h2>附近的电脑</h2><span class="hint">也开着轻桥，点“连接”后在那台电脑点“允许”</span></div>
     <div class="nearby" id="nearby"></div>
   </section>
+  <section id="recentWrap" class="hide"></section>
   <section id="feedWrap">
     <div class="sec-head"><h2>动态</h2><span class="hint" id="feedHint"></span><div class="grow"></div><button class="btn ghost small hide" id="histBtn" data-open-history="">手机发来的内容</button><button class="btn ghost small" id="clearFeed">清空</button></div>
     <ol class="feed" id="feed"></ol>

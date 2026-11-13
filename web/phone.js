@@ -542,20 +542,23 @@ function renderWizard() {
   } else {
     const others = TRIGS.filter(t => t[0] !== 'auto'), trig = others.find(t => t[0] === wzTrig()) || null;
     body = `<h2>第 3 步 · 设成自动运行</h2>
-      <p class="wzp">设好以后什么都不用按：<b>电脑上复制 → 打开微信就能粘贴</b>；<b>微信里复制 → 切走就到了电脑</b>。</p>
+      <p class="wzp">设好以后：<b>电脑上复制 → 打开微信就能粘贴</b>；<b>微信里复制 → 离开微信就到了电脑</b>。</p>
+      <div class="hint" style="margin-bottom:8px">它在每次<b>打开、离开</b>你选的 App 时都会跑一下，所以<b>只勾微信</b>（最多再加一个备忘录），勾多了会很频繁。电脑关着时它什么都不改，也不报错。</div>
       <a class="btn primary big wzjump" href="shortcuts://">${icon('open')}打开“快捷指令”</a>
       <ol class="wzlist">
-        <li>找到 <b>自动化</b>：在屏幕最下面那一排（快捷指令 · <b>自动化</b> · 快捷指令中心）。
-          <div class="wzsub">看不到这一排：左上角有 <b>‹</b> 就一直点它，退回最外面一页，这一排就出来了。</div></li>
-        <li>点 <b>新建自动化</b>；以前建过的，点右上角 <b>+</b>。接着点 <b>创建个人自动化</b>（有这一项才点）。</li>
-        <li>出来一长串（特定时间、到达、离开……），<b>往下翻</b>，点 <b>App</b></li>
-        <li>点“App”那一行右边的 <b>选取</b> → 搜 <kbd>微信</kbd> → 勾上 → 右上角 <b>完成</b></li>
-        <li>勾上 <b>已打开</b> 和 <b>已关闭</b>；下面选 <b>立即运行</b>（不要“运行前确认”），<b>运行时通知</b>关掉 → 右上角 <b>下一步</b></li>
-        <li>在“我的快捷指令”里点 <b>轻桥</b>（不要点“新建空白自动化”）→ <b>完成</b></li>
+        <li>首页“<b>资料库</b>”列表里，点最后一项 <b>自动化</b>
+          <div class="wzsub">不在首页：左上角有 <b>‹</b> 就一直点，退回“资料库”那一页。</div></li>
+        <li>点 <b>新建自动化</b>（以前建过的，点右上角 <b>+</b>）</li>
+        <li>往下翻，点 <b>App</b> → 点 <b>选取</b> → 只勾 <b>微信</b> → <b>完成</b>；<b>已打开</b>、<b>已关闭</b>都勾上 → <b>下一步</b>（有这个按钮才点）</li>
+        <li>这时会进一个编辑页，最上面一块写着“微信 打开或关闭时”：
+          <div class="wzsub">点“时”后面的 <b>⌄</b>：<b>自动化</b>那一行选<b>立即运行</b>，<b>通知</b>那一行关掉。</div></li>
+        <li>在下面加一个操作：找到分类 <b>脚本</b> → <b>快捷指令</b> → 点 <b>运行快捷指令</b>；出来“运行 快捷指令”后，点蓝色的<b>快捷指令</b>，选 <b>轻桥</b>
+          <div class="wzsub">如果直接出来了“我的快捷指令”列表，点里面的<b>轻桥</b>就行，不用做这一步。</div></li>
+        <li>点左上角 <b>‹</b> 返回，自动保存</li>
       </ol>
-      <div class="hint">哪一步的画面和这里不一样，截个图发给我。</div>
-      <div class="wzmockt">设好后“自动化”里会多一条：</div>
-      <div class="wzmock"><div class="mk"><i class="mi b">${icon('bolt')}</i><div>打开或关闭“微信”时<small>立即运行　<u>轻桥</u></small></div></div></div>
+      <div class="hint">iPhone 第一次会问“允许粘贴”。不想每次都问：iPhone <b>设置 → App → 快捷指令 → 从其他 App 粘贴 → 允许</b>。</div>
+      <div class="wzmockt">设好后的样子：</div>
+      <div class="wzmock"><div class="mk"><i class="mi b">${icon('bolt')}</i><div>“微信”打开或关闭时<small>立即运行　<u>运行 轻桥</u></small></div></div></div>
       ${wzCheck('设好后打开一次微信，再回到这里…', '，以后打开、离开微信都会自动同步。')}
       <details class="wzfold" ${trig ? 'open' : ''}><summary>不想自动？换成按一下运行</summary>
         <div class="hint" style="margin:6px 0 8px">最省事的不用设置：直接说 <b>“嘿 Siri，轻桥”</b>。下面几种都不会在屏幕上加小圆点：</div>

@@ -128,6 +128,17 @@ sealed class RelayServer : IDisposable {
   + "<p id=\"s\">电脑一回来，这一页会自己打开轻桥。</p><button onclick=\"location.reload()\">再试一次</button></div>"
   + "<script>setInterval(function(){fetch(location.href,{cache:'no-store'}).then(function(r){if(r.ok)location.reload()}).catch(function(){})},5000)</script></body></html>";
 
+ /// <summary>手机快捷指令发来的原样还回去：电脑关着时，手机剪贴板不变，快捷指令也不报错。</summary>
+ static void EchoBack(Req q, Res res) {
+  var m = new MemoryStream(); var buf = new byte[65536]; int n; long max = 64L << 20;
+  try {
+   if (q.Chunked) { while ((n = q.Body.Read(buf, 0, buf.Length)) > 0) { m.Write(buf, 0, n); if (m.Length > max) { res.Close = true; res.Text(""); return; } } }
+   else { if (q.Length > max) { res.Close = true; res.Text(""); return; } long left = q.Length; while (left > 0 && (n = q.Body.Read(buf, 0, (int)Math.Min(buf.Length, left))) > 0) { m.Write(buf, 0, n); left -= n; } }
+  } catch { res.Close = true; try { res.Text(""); } catch { } return; }
+  string type = q.H("Content-Type"); if (type.Length == 0) type = "text/plain; charset=utf-8";
+  res.Bytes(m.ToArray(), type, 200, new Dictionary<string, string> { ["X-LB-Offline"] = "1" });
+ }
+
  void Tunnel(Req q, Res res, string kind, string key, string rest) {
   string id = key;
   // 手机的网络（流量、热点）常把闲着的连接悄悄掐掉，iPhone 却还拿旧连接发下一个请求，
@@ -144,6 +155,7 @@ sealed class RelayServer : IDisposable {
   bool online; lock (gate) online = Online(d);
   if (!online) {
    // 手机直接打开网页时给一张看得懂的页面（以前是一行 JSON），电脑回来了自己刷新。
+   if (kind == "m" && q.Method == "POST" && rest == "/v1/swap") { EchoBack(q, res); return; }
    if (kind == "m" && q.Method == "GET" && rest == "/") { res.Bytes(Encoding.UTF8.GetBytes(OfflinePage), "text/html; charset=utf-8", 503, new Dictionary<string, string> { ["Cache-Control"] = "no-store" }); return; }
    res.Json(new { error = "那台电脑现在不在线（没开机，或没运行轻桥）" }, 503); return;
   }
@@ -163,13 +175,22 @@ sealed class RelayServer : IDisposable {
   var item = new Dictionary<string, object> { ["rid"] = rid, ["kind"] = kind, ["method"] = q.Method, ["target"] = rest + search, ["headers"] = headers, ["length"] = length };
   lock (gate) {
    pending[rid] = p;
-   if (!Deliver(d, item)) { pending.Remove(rid); res.Json(new { error = "那台电脑太忙了，请稍后再试" }, 503); return; }
+   if (!Deliver(d, item)) { pending.Remove(rid); if (kind == "m" && rest == "/v1/swap") { EchoBack(q, res); return; } res.Json(new { error = "那台电脑太忙了，请稍后再试" }, 503); return; }
    requests++;
   }
-  if (!p.Started.Wait((int)StartMs)) {
+  // 快捷指令等不了一分钟（会弹错）：电脑 12 秒没接就当它不在，原样还回去
+  if (!p.Started.Wait(kind == "m" && rest == "/v1/swap" ? 12000 : (int)StartMs)) {
    bool timedOut;
    lock (gate) { timedOut = !p.Replied; if (timedOut) { pending.Remove(rid); p.Replied = true; } }
-   if (timedOut) { res.Close = true; res.Json(new { error = "那台电脑没有响应" }, 504); return; }
+   if (timedOut) {
+    // 电脑刚关（中转还当它在线）：快捷指令发来的还没被取走，原样还回去，手机不报错
+    if (kind == "m" && rest == "/v1/swap" && !p.BodyTaken) {
+     try { var m = new MemoryStream(); var b = new byte[65536]; long left = length; int n; while (left > 0 && (n = body.Read(b, 0, (int)Math.Min(b.Length, left))) > 0) { m.Write(b, 0, n); left -= n; }
+      string type = q.H("Content-Type"); if (type.Length == 0) type = "text/plain; charset=utf-8";
+      res.Close = true; res.Bytes(m.ToArray(), type, 200, new Dictionary<string, string> { ["X-LB-Offline"] = "1" }); return; } catch { }
+    }
+    res.Close = true; res.Json(new { error = "那台电脑没有响应" }, 504); return;
+   }
   }
   p.Finished.Wait();
   lock (gate) pending.Remove(rid);

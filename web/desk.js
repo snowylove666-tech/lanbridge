@@ -41,8 +41,28 @@ const tok = () => 't=' + encodeURIComponent(TOKEN);
 
 // ───────────── 渲染 ─────────────
 
+// 两页：主页只放设备和最近几条，动态放全部记录
+let page = (() => { try { return localStorage.getItem('lb.page') || 'home'; } catch { return 'home'; } })();
+function setPage(p) { page = p; try { localStorage.setItem('lb.page', p); } catch { } if (p === 'feed') markSeen(); render(); scrollTo(0, 0); }
+const seenAt = () => { try { return +localStorage.getItem('lb.feedSeen') || 0; } catch { return 0; } };
+function markSeen() { const t = S && S.feed.length ? Math.max(...S.feed.map(f => f.time || 0)) : Date.now(); try { localStorage.setItem('lb.feedSeen', String(t)); } catch { } }
+document.addEventListener('click', e => { const b = e.target.closest('[data-page]'); if (b) setPage(b.dataset.page); });
+function renderPages() {
+  document.body.classList.toggle('page-home', page === 'home');
+  document.body.classList.toggle('page-feed', page === 'feed');
+  document.querySelectorAll('#dtabs [data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === page));
+  if (page === 'feed') markSeen();
+  const fresh = S.feed.filter(f => f.kind !== 'info' && (f.time || 0) > seenAt()).length;
+  const badge = $('feedBadge'); badge.classList.toggle('hide', !fresh || page === 'feed'); badge.textContent = fresh > 99 ? '99+' : fresh;
+  if (page !== 'home') return;
+  const items = S.feed.filter(f => f.kind !== 'info').slice(0, 3);
+  set($('recentWrap'), `<div class="sec-head"><h2>最近</h2><div class="grow"></div><button class="btn ghost small" data-page="feed">全部动态 ›</button></div>
+    ${items.length ? `<ol class="recent">${items.map(f => `<li data-page="feed">${icon(f.kind === 'text' ? 'text' : f.kind === 'image' ? 'image' : 'file')}<span class="rt">${esc(f.kind === 'text' ? (f.text || '').replace(/\s+/g, ' ').slice(0, 80) : (f.files || f.items || []).map(x => x.name).join('、') || '文件')}</span><span class="rm">${esc(f.from || '')} · ${hhmm(f.time)}</span></li>`).join('')}</ol>` : '<div class="recent-empty">复制或发送的东西会出现在这里</div>'}`);
+}
+
 function render() {
   if (!S) return;
+  renderPages();
   renderTop(); renderRequests(); renderPending();
   const none = S.devices.length === 0 && S.phones.length === 0;
   $('welcome').classList.toggle('hide', !none);

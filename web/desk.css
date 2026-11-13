@@ -296,3 +296,21 @@ details.fold2:not([open]) { gap: 0; }
 .feed .tile figcaption em { white-space: nowrap; flex: none; }
 .feed .fi button.ftxt { border: 0; background: none; padding: 0; font-family: inherit; text-align: left; cursor: pointer; width: 100%; }
 .feed .fi .ftxt { margin: 0 0 3px; color: var(--ink) !important; font-size: 13px; line-height: 1.5; color: var(--ink2); white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; user-select: text; }
+
+/* 2.2.19 两页：主页 / 动态 */
+.dtabs { display: flex; gap: 2px; margin-left: 14px; padding: 3px; border-radius: 10px; background: var(--line2); }
+.dtabs button { position: relative; border: 0; background: none; font: inherit; font-size: 13.5px; color: var(--muted); padding: 5px 14px; border-radius: 8px; cursor: pointer; }
+.dtabs button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.dtabs i { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font: 600 10.5px/16px var(--sans, inherit); font-style: normal; text-align: center; }
+body.page-home #feedWrap { display: none; }
+body.page-home #recentWrap { display: block !important; }
+body.page-feed #devicesWrap, body.page-feed #nearbyWrap, body.page-feed #welcome, body.page-feed #recentWrap { display: none !important; }
+#recentWrap { margin-top: 26px; }
+.recent { list-style: none; margin: 0; padding: 4px 0; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+.recent li { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; border-top: 1px solid var(--line2); font-size: 14px; }
+.recent li:first-child { border-top: 0; }
+.recent li:hover { background: var(--hover); }
+.recent li svg { flex: none; width: 17px; height: 17px; color: var(--muted); }
+.recent .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent .rm { flex: none; color: var(--muted); font-size: 12.5px; }
+.recent-empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13.5px; border-radius: 14px; background: var(--panel); border: 1px dashed var(--line); }

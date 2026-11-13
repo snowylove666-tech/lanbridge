@@ -344,7 +344,8 @@ sealed class PhoneHub {
   bool phoneNew = mode != "receive" && text.Length > 0 && sha != p.baseline;
   if (phoneNew && pcNew && latest.text == text) { lock (Gate) { p.baseline = sha; p.lastClip = latest.id; app.Save(); } return ("noop", text, "", "两边已经一样了。"); }
   if (phoneNew && (fresh || !pcRecent)) {
-   TextIn(p, new Dictionary<string, object> { ["text"] = text });
+   try { TextIn(p, new Dictionary<string, object> { ["text"] = text }); }
+   catch (ApiError) { return ("noop", text, "", "电脑剪贴板正忙，下次再发。"); }
    // 发过去的就算两边同步过了：以前没记，手机剪贴板里同一段旧字每次运行都被当成“新的”发回电脑，
    // 把电脑上刚复制的盖掉（自动化每次打开 App 都运行，就再也拿不到电脑的内容）
    lock (Gate) { p.baseline = sha; app.Save(); }
@@ -366,7 +367,8 @@ sealed class PhoneHub {
  /// 手机有新内容 → 发给电脑并原样返回；电脑有新文字 → 返回电脑的文字；都没有 → 原样返回。
  /// </summary>
  public void SwapIn(Phone p, Req q, Res res) {
-  if (C.paused) throw new ApiError(503, "电脑上的轻桥暂停了");
+  // 自动化每次打开 / 离开 App 都会跑：电脑暂停时原样还回去，手机剪贴板不变，也不弹错
+  if (C.paused) { Echo(q, res); return; }
   string type = q.H("Content-Type").ToLowerInvariant();
   // 请求体选成了 JSON / 表单：手机剪贴板根本没发过来，别把“{}”当文字放进电脑剪贴板
   if (type.StartsWith("application/json") || type.StartsWith("multipart/") || type.StartsWith("application/x-www-form-urlencoded")) { SwapBad(p, "body", res); return; }
@@ -391,6 +393,13 @@ sealed class PhoneHub {
   lock (Gate) if (!p.init) { p.init = true; p.baseline = ""; }
   var r = Decide(p, text, "smart", true);
   res.Text(r.text);
+ }
+
+ /// <summary>把快捷指令发来的原样还回去（手机剪贴板保持不变）。</summary>
+ public static void Echo(Req q, Res res) {
+  byte[] b = q.Length > 0 ? q.ReadAll(64 * 1024 * 1024) : new byte[0];
+  string type = q.H("Content-Type"); if (type.Length == 0) type = "text/plain; charset=utf-8";
+  res.Bytes(b, type);
  }
 
  /// <summary>快捷指令到了电脑，但配错了：记下来让向导指出改哪里；回一句看得懂的话（它会被拷进手机剪贴板）。</summary>
