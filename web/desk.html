@@ -9,16 +9,31 @@
 <link rel="stylesheet" href="/assets/desk.css">
 </head>
 <body>
-<header class="top">
-  <img class="logo" src="/assets/icon.svg" alt="">
-  <div class="brand">轻桥</div>
-  <nav class="dtabs" id="dtabs"><button data-page="home">主页</button><button data-page="feed">动态<i id="feedBadge" class="hide"></i></button></nav>
-  <button class="me" id="me" title="点一下改名字"><span class="me-label">本机</span><b id="meName">…</b></button>
+<div class="app">
+<aside class="rail">
+  <div class="rbrand"><img class="logo" src="/assets/icon.svg" alt=""><b>轻桥</b></div>
+  <nav class="rnav" id="dtabs">
+    <button class="ritem" data-page="home" id="navHome"></button>
+    <button class="ritem" data-page="feed" id="navFeed"></button>
+    <button class="ritem" data-open-cloud id="navCloud"></button>
+  </nav>
+  <div class="rsep"></div>
+  <button class="ritem" id="openSettings"></button>
   <div class="grow"></div>
-  <button class="sync" id="sync"></button>
-  <button class="iconbtn" id="openSettings" title="设置"></button>
+  <div class="rfoot" id="rfoot"></div>
+</aside>
+<div class="pane">
+<header class="top">
+  <div class="ph">
+    <h1 id="pageTitle">主页</h1>
+    <p id="pageSub"></p>
+    <div class="pstrip">
+      <button class="me" id="me" title="点一下改名字"><span class="me-label">本机</span><b id="meName">…</b></button>
+      <button class="sync" id="sync"></button>
+      <span class="pinfo" id="pinfo"></span>
+    </div>
+  </div>
 </header>
-
 <main id="main">
   <section id="requests"></section>
   <section id="pending"></section>
@@ -34,9 +49,11 @@
   <section id="recentWrap" class="hide"></section>
   <section id="feedWrap">
     <div class="sec-head"><h2>动态</h2><span class="hint" id="feedHint"></span><div class="grow"></div><button class="btn ghost small hide" id="histBtn" data-open-history="">手机发来的内容</button><button class="btn ghost small" id="clearFeed">清空</button></div>
-    <ol class="feed" id="feed"></ol>
+    <div class="fsplit"><ol class="feed" id="feed"></ol><aside class="fdetail" id="fdetail"></aside></div>
   </section>
 </main>
+</div>
+</div>
 
 <div class="scrim hide" id="scrim"></div>
 <aside class="drawer" id="settings" aria-hidden="true"></aside>

@@ -48,6 +48,14 @@ const seenAt = () => { try { return +localStorage.getItem('lb.feedSeen') || 0; }
 function markSeen() { const t = S && S.feed.length ? Math.max(...S.feed.map(f => f.time || 0)) : Date.now(); try { localStorage.setItem('lb.feedSeen', String(t)); } catch { } }
 document.addEventListener('click', e => { const b = e.target.closest('[data-page]'); if (b) setPage(b.dataset.page); });
 function renderPages() {
+  set($('navHome'), `${icon('home')}<span>主页</span>`);
+  set($('navFeed'), `${icon('list')}<span>动态</span><i id="feedBadge" class="hide"></i>`);
+  set($('navCloud'), `${icon('cloud')}<span>小云</span>`);
+  set($('openSettings'), `${icon('gear')}<span>设置</span>`);
+  set($('pageTitle'), page === 'feed' ? '动态' : '主页');
+  set($('pageSub'), page === 'feed' ? '收发过的文字、图片和文件。点一条在右边看详情。' : '复制的文字、截图会自动出现在你的其他设备上。把文件拖到设备上就能发过去。');
+  const relayOk = S.relay && S.relay.url && S.relay.state === 'ok';
+  set($('pinfo'), `<span>${icon('link')}${relayOk ? '跨网络已开' : '只在同一个网络'}</span>${S.cloud && S.cloud.ready ? `<span>${icon('cloud')}小云 ${S.cloud.usedMB != null ? S.cloud.usedMB + ' / ' + S.cloud.capMB + ' MB' : '可用'}</span>` : ''}`);
   document.body.classList.toggle('page-home', page === 'home');
   document.body.classList.toggle('page-feed', page === 'feed');
   document.querySelectorAll('#dtabs [data-page]').forEach(b => b.classList.toggle('on', b.dataset.page === page));
@@ -92,7 +100,7 @@ function renderTop() {
   $('sync').className = 'sync' + (p ? ' paused' : '');
   set($('sync'), p ? `${icon('pause')}同步已暂停` : `<i class="dot ${online || relayOk ? 'on' : ''}"></i>${parts.join(' · ')}`);
   $('sync').title = p ? '点一下恢复' : '点一下暂停全部同步';
-  set($('openSettings'), icon('gear'));
+  set($('rfoot'), `<span>轻桥 ${esc(S.version || '')}</span>`);
 }
 
 function renderRequests() {
@@ -127,17 +135,27 @@ function devSub(d) {
   return d.seen ? '离线 · ' + when(d.seen) : '等它上线';
 }
 
+function mapPos(i, n) {
+  // 从正上方开始顺时针排；人多时圈放大一点
+  const a = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / n, rx = n > 8 ? 230 : 200, ry = 165;
+  return `left:calc(50% + ${Math.round(Math.cos(a) * rx)}px);top:calc(50% + ${Math.round(Math.sin(a) * ry)}px)`;
+}
 function renderDevices() {
   // 在线的排前面；同一类里按最近在线
   const all = [...S.devices, ...S.phones].sort((a, b) => (a.state === 'offline') - (b.state === 'offline') || (b.seen || 0) - (a.seen || 0));
-  set($('devices'), all.map(d => {
+  const n = all.length + 1, fresh0 = (S.nearby || []).length;
+  const relay = !!S.pair.relayUrl;
+  const qr = `/api/local/qr?ip=${encodeURIComponent(S.me.ip)}&mode=${relay ? 'relay' : 'lan'}&v=${S.pair.until}&${tok()}`;
+  set($('devices'), `<div class="map"><div class="ring"></div>
+    <div class="center"><div class="qrc"><img alt="二维码" src="${qr}"></div><b>手机扫码连接</b><small>${relay ? '在哪个网络都能用' : '手机连同一个 Wi-Fi'}</small></div>
+    ${all.map((d, i) => {
     const on = d.state !== 'offline';
-    return `<div class="dev ${on ? 'online' : ''}" data-dropdev="${d.id}">
+    return `<div class="dev bub ${on ? 'online' : ''}" style="${mapPos(i, n)}" data-dropdev="${d.id}">
       <button class="more" data-menu="${d.id}" title="更多">${icon('more')}</button>
       <div class="dic">${icon(devIcon(d))}<i class="dot ${on ? 'on' : ''}"></i></div>
       <div class="dname" title="${esc(d.name)}">${esc(d.name)}</div>
       <div class="dsub ${d.error && !on ? 'warn' : ''}" title="${esc(devSub(d))}">${esc(devSub(d))}</div>
-      <div class="dact"><button class="btn soft small" data-pick="${d.id}">${icon('send')}发文件</button>${d.pending ? `<span class="muted" style="font-size:12px;align-self:center">${d.pending} 项排队中</span>` : ''}</div>
+      ${d.pending ? `<div class="dq">${d.pending} 项排队中</div>` : ''}
       ${openMenu === d.id ? `<div class="menu">
         <button data-pick="${d.id}">${icon('file')}发文件</button>
         <button data-pick-folder="${d.id}">${icon('folder')}发文件夹</button>
@@ -145,7 +163,10 @@ function renderDevices() {
         <button class="bad" data-remove="${d.id}">${icon('trash')}${d.kind === 'phone' ? '移除这部手机' : '移除这台电脑'}</button>
       </div>` : ''}
     </div>`;
-  }).join('') + cloudCard());
+  }).join('')}
+    <div class="dev bub add" style="${mapPos(all.length, n)}" data-add><div class="dic">${icon('plus')}</div><div class="dname">添加设备${fresh0 ? `<span class="badge">${fresh0}</span>` : ''}</div><div class="dsub">手机、另一台电脑</div></div>
+  </div>
+  <div class="maprow"><div class="dropstrip">${icon('upload')}<span>把文件拖到这里，或拖到上面的设备上，就能发过去</span></div>${cloudCard()}</div>`);
   $('devHint').textContent = all.length ? '把文件拖到设备上就能发过去' : '';
   const fresh = (S.nearby || []).length;
   set($('addBtn'), `${icon('plus')}添加设备${fresh ? `<span class="badge">${fresh}</span>` : ''}`);
@@ -381,7 +402,7 @@ function renderFeed() {
     }
     if (f.status === 'failed' && f.dir === 'out') acts.push(`<button class="btn ghost small" data-retry="${f.id}">${icon('refresh')}重试</button>`);
     acts.push(`<button class="iconbtn" data-del="${f.id}" title="从动态里删掉这条">${icon('x')}</button>`);
-    out.push(`<li class="fi">
+    out.push(`<li class="fi ${f.id === selFeedId() ? 'sel' : ''}" data-fsel="${f.id}">
       <div class="fic">${icon(kindIcon)}</div>
       <div class="fb">${long ? `<button class="ftxt" data-recopy="${f.id}" title="点一下重新放进剪贴板">${esc(f.text.slice(0, 600))}</button>` : ''}<div class="fl">${long ? '' : title}<span class="fm">${meta.join(' · ')}</span></div>${extra}</div>
       <div class="fa">${acts.join('')}</div>
@@ -396,7 +417,37 @@ function renderFeed() {
     out.push(`<li class="ffoot">记录保留 <select id="feedDays">${[[7, '7 天'], [30, '30 天'], [90, '90 天'], [0, '一直留着']].map(([v, l]) => `<option value="${v}" ${days === v ? 'selected' : ''}>${l}</option>`).join('')}</select><span>共 ${total} 条${total > all.length ? `，这里显示最近 ${all.length} 条` : ''} · 只删记录，不删收到的文件</span></li>`);
   }
   set($('feed'), out.join(''));
+  renderDetail();
 }
+
+// 动态右栏：选中那一条的详情（状态小标签 + 内容 + 操作）
+let selFeed = null;
+const selFeedId = () => { const list = S.feed.filter(f => f.kind !== 'info' && feedMatch(f, feedFilter)); return (list.find(f => f.id === selFeed) || list[0] || {}).id; };
+function chip(html, cls) { return `<span class="chip ${cls || ''}">${html}</span>`; }
+function renderDetail() {
+  const f = S.feed.find(x => x.id === selFeedId());
+  if (!f) { set($('fdetail'), `<div class="fdempty">${icon('list')}<span>还没有动态。在这台电脑或其他设备上复制点什么试试。</span></div>`); return; }
+  const kind = f.kind === 'text' ? '文字' : isPic(f) ? '图片' : '文件';
+  const total = f.total || f.files.reduce((n, x) => n + (x.size || 0), 0);
+  const st = rowStatus(f), r = route(f);
+  const chips = [st ? chip(st, 'st') : '', chip(kind), f.kind === 'text' && f.chars ? chip(f.chars + ' 字') : total ? chip(size(total)) : '', chip(dayLabel(f.time) + ' ' + hhmm(f.time))].join('');
+  let body = '';
+  if (f.kind === 'text' && f.text) body = `<div class="dtext">${esc(f.text)}</div>${f.chars > f.text.length ? '<div class="muted dnote">太长了，这里只显示前一部分；点“复制”拿到的是全文。</div>' : ''}`;
+  if (picReady(f)) body += `<img class="dpic" src="/api/local/thumb?id=${f.id}&i=0&${tok()}" data-zoom="${f.id}" alt="">`;
+  if (f.files.length) body += `<div class="dfiles">${f.files.map((x, i) => `<div class="dfile">${icon('file')}<span class="dn" title="${esc(x.name)}">${esc(x.name)}</span><span class="muted">${x.size ? size(x.size) : ''}</span>${x.exists ? `<button class="btn ghost small" data-open="${f.id}" data-i="${i}">打开</button>` : '<span class="muted">已不在</span>'}</div>`).join('')}${f.more ? `<div class="muted dnote">还有 ${f.more} 个文件</div>` : ''}</div>`;
+  const anyFile = f.files.some(x => x.exists);
+  const acts = [];
+  if ((f.kind === 'text' && f.text) || ((f.kind === 'image' || f.kind === 'files') && anyFile)) acts.push(`<button class="btn soft" data-recopy="${f.id}">${icon('copy')}再复制一次</button>`);
+  if (anyFile) acts.push(`<button class="btn line" data-reveal="${f.id}">${icon('folder')}在文件夹中显示</button>`);
+  if (f.status === 'failed' && f.dir === 'out') acts.push(`<button class="btn line" data-retry="${f.id}">${icon('refresh')}重试</button>`);
+  acts.push(`<button class="btn ghost" data-del="${f.id}">${icon('trash')}删掉这条</button>`);
+  set($('fdetail'), `<div class="dhead">${icon(f.kind === 'text' ? 'text' : isPic(f) ? 'image' : 'file')}<b>${esc(r || kind)}</b></div><div class="chips">${chips}</div>${body}<div class="dacts">${acts.join('')}</div>`);
+}
+document.addEventListener('click', e => {
+  const li = e.target.closest('li[data-fsel]');
+  if (!li || li.dataset.fsel === selFeed) return;
+  selFeed = li.dataset.fsel; setTimeout(renderFeed, 0);   // 点标题、按钮也顺带选中这一条
+});
 document.addEventListener('change', e => { if (e.target.id === 'feedDays') act('settings', { feedDays: +e.target.value }, '已改'); });
 
 function sw(key, on) { return `<label class="switch"><input type="checkbox" data-set="${key}" ${on ? 'checked' : ''}><span></span></label>`; }
