@@ -209,9 +209,14 @@ async function refreshCloud() {
 }
 function cloudCard() {
   if (!cloudList) return '';
+  const row = x => x.kind === 'text'
+    ? `<div class="file ctext"><div class="fic">${icon('text')}</div><div class="fb"><div class="ctx">${esc(x.text || '')}${x.full ? '' : '…'}</div><div class="fs">${when(x.at)}${x.from ? ' · ' + esc(x.from) : ''}${x.full ? '' : ' · 长文字，点复制取全文'}</div></div><button class="btn soft small" data-ccopy="${x.id}">${icon('copy')}复制</button></div>`
+    : `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)} · ${when(x.at)}${x.from ? ' · ' + esc(x.from) : ''}</div></div><a class="btn soft small" href="${esc(x.link)}" target="_blank" rel="noopener">${icon('download')}下载</a></div>`;
   return `<div class="card"><div class="ct">${icon('cloud')}小云<span class="muted" style="margin-left:auto;font-weight:400;font-size:12px">${cloudList.usedMB} / ${cloudList.capMB} MB</span></div>
-    ${cloudList.files.length ? '' : '<div class="empty">放进来的照片、文件，组里的电脑和这部手机在哪都能下载，也可以把链接发给别人。放满 1 GB 会先删最早的。</div>'}
-    ${cloudList.files.slice(0, 20).map(x => `<div class="file"><div class="fic">${icon('file')}</div><div class="fb"><div class="fn">${esc(x.name)}</div><div class="fs">${size(x.size)} · ${when(x.at)}${x.from ? ' · ' + esc(x.from) : ''}</div></div><a class="btn soft small" href="${esc(x.link)}" target="_blank" rel="noopener">${icon('download')}下载</a></div>`).join('')}
+    <textarea class="input ctin" id="cloudText" placeholder="输入或粘贴文字，存到小云：组里的电脑和这部手机随时能复制" rows="3"></textarea>
+    <div class="actions"><button class="btn primary big" id="cloudSave">${icon('cloud')}存到小云</button></div>
+    ${cloudList.files.length ? '' : '<div class="empty">存进来的文字、照片、文件，组里的电脑和这部手机在哪都能拿到，文件也可以把链接发给别人。放满 1 GB 会先删最早的。</div>'}
+    ${cloudList.files.slice(0, 30).map(row).join('')}
     <div class="actions"><button class="btn soft big" id="cloudPick">${icon('upload')}放照片 / 文件到小云</button></div>
     <div id="cups">${upsHtml(true)}</div>
     <input type="file" id="cloudFiles" multiple hidden>
@@ -283,10 +288,30 @@ function renderHist() {
 
 // 小云单独一页（以前藏在历史页最下面，找不到）
 function renderCloud() {
+  const box = $('cloudText');
+  if (box && document.activeElement === box) return; // 正在输入：不重画，免得打断
+  const keep = box ? box.value : '';
   const off = S && (S.cloud === undefined || S.cloud < 0);
   $('app').innerHTML = `${banners()}${cloudCard() || `<div class="card"><div class="ct">${icon('cloud')}小云</div><div class="empty">${off ? '小云要电脑上的轻桥开着“跨网络”才能用。在电脑上打开轻桥 → 设置 → 跨网络，打开后这里就会出现。' : '正在读取小云…'}</div></div>`}`;
+  if ($('cloudText')) $('cloudText').value = keep;
   if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
   if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
+  if ($('cloudSave')) $('cloudSave').onclick = async () => {
+    const t = $('cloudText').value;
+    if (!t.trim()) { toast('先输入或粘贴文字', true); $('cloudText').focus(); return; }
+    const b = $('cloudSave'); b.disabled = true; b.textContent = '正在存…';
+    try { await call('/api/phone/cloud-text', { text: t }); $('cloudText').value = ''; $('cloudText').blur(); toast('已存到小云'); cloudKey = null; await refreshCloud(); renderCloud(); }
+    catch (e) { toast(e.message, true); b.disabled = false; b.innerHTML = `${icon('cloud')}存到小云`; }
+  };
+  document.querySelectorAll('[data-ccopy]').forEach(b => b.onclick = async () => {
+    const x = (cloudList.files || []).find(f => f.id === b.dataset.ccopy); if (!x) return;
+    if (x.full) { const ok = copyText(x.text); toast(ok ? '已复制，可以去粘贴了' : '复制没成功，长按文字手动复制', !ok); return; }
+    // 长文字：先取全文（iPhone 要求复制发生在点按里，所以取到后再点一次）
+    if (x.fullText) { const ok = copyText(x.fullText); toast(ok ? '已复制全文' : '复制没成功', !ok); return; }
+    b.disabled = true;
+    try { const r = await call('/api/phone/cloud-read?id=' + encodeURIComponent(x.id)); x.fullText = r.text; b.disabled = false; b.innerHTML = `${icon('copy')}复制全文`; toast('全文取好了，再点一次“复制全文”'); }
+    catch (e) { b.disabled = false; toast(e.message, true); }
+  });
 }
 
 function renderSet() {

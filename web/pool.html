@@ -1,13 +1,13 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>轻桥小云</title>
+<title>PrismBlue 轻桥 · 小云</title>
 <style>
-:root { --bg: #f5f5f7; --panel: #fff; --ink: #1d1d1f; --ink2: #424245; --muted: #86868b; --line: #e5e5ea; --accent: #0a84ff; --soft: #e8f2ff; --bad: #d70015; }
-@media (prefers-color-scheme: dark) { :root { --bg: #000; --panel: #1c1c1e; --ink: #f5f5f7; --ink2: #d1d1d6; --muted: #8e8e93; --line: #2c2c2e; --accent: #0a84ff; --soft: #0a2540; --bad: #ff453a; } }
+:root { --bg: #f6f3ec; --panel: #fffdf8; --ink: #1d1b17; --ink2: #4a453d; --muted: #7a7366; --line: #e7e0d2; --accent: #e0482a; --soft: #fbe6df; --bad: #b42318; }
+@media (prefers-color-scheme: dark) { :root { --bg: #141310; --panel: #1d1b17; --ink: #f3efe6; --ink2: #cfc8ba; --muted: #978f81; --line: #34302a; --accent: #ff6a4a; --soft: #3d2219; --bad: #f07067; } }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
 .card { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 26px 22px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
@@ -21,12 +21,13 @@ h1 { font-size: 19px; margin: 0 0 4px; word-break: break-all; }
 .btn.line { background: var(--soft); color: var(--accent); }
 .bad { color: var(--bad); }
 .note { color: var(--muted); font-size: 12.5px; margin-top: 16px; line-height: 1.6; }
+textarea.txt { width: 100%; min-height: 180px; max-height: 50vh; margin-top: 4px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: inherit; font-size: 15px; line-height: 1.6; resize: vertical; }
 img.pre { max-width: 100%; border-radius: 10px; margin-top: 12px; display: block; }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="brand"><i></i>轻桥 · 小云</div>
+  <div class="brand"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9InQiIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMyYjM2NTQiLz48c3RvcCBvZmZzZXQ9Ii41IiBzdG9wLWNvbG9yPSIjMTQxYTI5Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMGEwZDE2Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9IjI0MCIgaGVpZ2h0PSIyNDAiIHJ4PSI1NiIgZmlsbD0idXJsKCN0KSIgc3Ryb2tlPSIjNWE2Njg0IiBzdHJva2Utb3BhY2l0eT0iLjgiIHN0cm9rZS13aWR0aD0iMiIvPjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y0ZjZmYiIgc3Ryb2tlLXdpZHRoPSIxNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cGF0aCBkPSJNNjIuMiAxMDQuMUE3MCA3MCAwIDAgMSAxNzQuOCA3Ni4wIi8+PHBhdGggZD0iTTE5My44IDE1MS45QTcwIDcwIDAgMCAxIDgxLjIgMTgwLjAiLz48L2c+PGcgZmlsbD0iI2Y0ZjZmYiI+PHBvbHlnb24gcG9pbnRzPSIxOTIuNyw5Mi4wIDE4My45LDU5LjkgMTU5LjgsODYuNyIvPjxwb2x5Z29uIHBvaW50cz0iNjMuMywxNjQuMCA3Mi4xLDE5Ni4xIDk2LjIsMTY5LjMiLz48L2c+PHBvbHlnb24gcG9pbnRzPSIxMjguMCw5MS4wIDkwLjIsMTYxLjAgMTI4LjAsMTQ1LjYiIGZpbGw9IiNmNGY2ZmIiLz48cG9seWdvbiBwb2ludHM9IjEyOC4wLDkxLjAgMTI4LjAsMTQ1LjYgMTY1LjgsMTYxLjAiIGZpbGw9IiNlYzRmMjIiLz48cG9seWdvbiBwb2ludHM9IjkwLjIsMTYxLjAgMTI4LjAsMTQ1LjYgMTY1LjgsMTYxLjAiIGZpbGw9IiM3ZDgwOGIiLz48L3N2Zz4=" alt="" style="width:22px;height:22px">PrismBlue 轻桥 · 小云</div>
   <h1 id="title">正在下载…</h1>
   <div class="sub" id="sub">文件在你的设备上解密，服务器看不到内容。</div>
   <div class="bar" id="barw"><i id="bar"></i></div>
@@ -174,6 +175,17 @@ async function main() {
   const a = document.createElement('a'); a.className = 'btn'; a.href = url; a.download = name; a.textContent = '保存到这台设备';
   $('act').appendChild(a);
   if (MIME[ext]) { const v = document.createElement('a'); v.className = 'btn line'; v.href = url; v.target = '_blank'; v.rel = 'noopener'; v.textContent = '直接打开'; $('act').appendChild(v); }
+  if (ext === 'txt' && body.length < (2 << 20)) {
+    // 存在小云里的文字：直接显示，可以复制
+    const text = new TextDecoder().decode(body).replace(/^﻿/, '').replace(/\r\n/g, '\n');
+    $('title').textContent = '小云里的文字'; $('sub').textContent = text.length + ' 字 · 已解密';
+    const ta = document.createElement('textarea'); ta.className = 'txt'; ta.readOnly = true; ta.value = text;
+    const c = document.createElement('button'); c.className = 'btn'; c.textContent = '复制文字';
+    c.onclick = () => { ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); let ok = false; try { ok = document.execCommand('copy'); } catch { } if (!ok && navigator.clipboard) navigator.clipboard.writeText(text).then(() => c.textContent = '已复制', () => {}); c.textContent = ok ? '已复制' : '长按上面的文字复制'; };
+    $('act').innerHTML = ''; $('act').append(ta, c);
+    a.className = 'btn line'; a.textContent = '存成 .txt 文件'; $('act').appendChild(a);
+    return;
+  }
   if (/^image\//.test(MIME[ext] || '') && ext !== 'heic') { const img = new Image(); img.className = 'pre'; img.src = url; img.alt = ''; $('act').appendChild(img); }
 }
 main();

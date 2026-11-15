@@ -599,6 +599,9 @@ async function loadCloud() {
 
 function renderCloud() {
   const d = cloudData; if (!d) return;
+  const box = $('cloudText'); if (box && document.activeElement === box && box.value) return; // 正在输入：不重画
+  const keep = box ? box.value : '';
+  setTimeout(() => { if ($('cloudText') && keep && !$('cloudText').value) $('cloudText').value = keep; }, 0);
   if (!d.ready) {
     const why = d.reason === 'off' ? '小云放在常驻中转服务器上。先开启跨网络（选常驻中转），这里就能用。'
       : d.reason === 'down' ? '中转服务器暂时连不上，连上后这里会自动刷新。'
@@ -607,7 +610,13 @@ function renderCloud() {
     return;
   }
   const pct = d.capMB ? Math.min(100, d.usedMB * 100 / d.capMB) : 0;
-  const rows = d.files.map(f => `<li class="fi">
+  const rows = d.files.map(f => f.kind === 'text' ? `<li class="fi ctext">
+      <div class="fic">${icon('text')}</div>
+      <div class="fb"><div class="fh"><span class="route">${esc(f.from || '')}</span><span>· ${dayLabel(f.at)} ${hhmm(f.at)}${f.full ? '' : ' · 长文字，只显示开头'}</span></div>
+        <div class="ctx">${esc(f.text || '')}${f.full ? '' : '…'}</div></div>
+      <div class="fa"><button class="btn soft small" data-cloud-copy="${f.id}">${icon('copy')}复制</button>
+        <button class="iconbtn" style="width:28px;height:28px" data-cloud-del="${f.id}" title="从小云删掉">${icon('x')}</button></div>
+    </li>` : `<li class="fi">
       <div class="fic">${icon('file')}</div>
       <div class="fb"><div class="fh"><b>${esc(f.name)}</b><span class="route">${esc(f.from || '')}</span><span>· ${size(f.size)} · ${dayLabel(f.at)} ${hhmm(f.at)}</span></div>
         <div class="clink" title="${esc(f.link)}">${esc(f.link.split('#')[0])}</div></div>
@@ -619,6 +628,7 @@ function renderCloud() {
     <div class="cusage"><div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>
       <small>已用 ${d.usedMB} MB / ${fmtCap(d.capMB)}，单个最大 ${d.maxFileMB} MB。满了会先删最早放上来的。</small></div>
     ${d.error ? `<div class="bad" style="margin:0 2px 12px">${esc(d.error)}</div>` : ''}
+    <div class="ctbox"><textarea class="input" id="cloudText" rows="2" placeholder="输入或粘贴文字，存到小云：手机和组里的电脑随时能复制"></textarea><button class="btn primary" data-cloud-text>${icon('cloud')}存到小云</button></div>
     <div class="cdrop">${icon('upload')}<span>把文件拖到这个窗口，或者点右上角“放文件”。组里的电脑都能看到；“复制链接”发给手机或别人，浏览器打开就能下载。</span></div>
     ${d.files.length ? `<ul class="feed">${rows}</ul>` : '<div class="hempty">小云里还没有文件。</div>'}
     <div class="hnote">文件在这台电脑上加密后才上传，服务器上只有密文；链接里 # 后面是解密钥匙，只发给你信任的人。</div>`);
@@ -716,6 +726,14 @@ document.addEventListener('click', async e => {
   if (d.ffilter) { feedFilter = d.ffilter; renderFeed(); return; }
   if (d.fview) { feedView = d.fview; try { localStorage.setItem('lb.feedView', feedView); } catch { } renderFeed(); return; }
   if (d.cloudClose !== undefined) { closeCloud(); return; }
+  if (d.cloudCopy !== undefined) { await act('cloud-copy', { id: d.cloudCopy }, '已放进剪贴板，直接 Ctrl+V'); return; }
+  if (d.cloudText !== undefined) {
+    const box = $('cloudText'), text = box ? box.value : '';
+    if (!text.trim()) { toast('先输入或粘贴文字', true); if (box) box.focus(); return; }
+    t.disabled = true;
+    try { await api('cloud-text', { text }); box.value = ''; toast('已存到小云'); loadCloud(); } catch (err) { toast(err.message, true); } finally { t.disabled = false; }
+    return;
+  }
   if (d.cloudDown !== undefined) { await act('cloud-download', { id: d.cloudDown }, '开始下载，完成后在“动态”里'); return; }
   if (d.cloudDel !== undefined) { if (confirm('从小云删掉这个文件？\n\n组里的电脑和链接都再也下载不了。')) { await act('cloud-delete', { id: d.cloudDel }, '已删除'); loadCloud(); } return; }
   if (d.cloudPick !== undefined) { await act('native', { cmd: 'pick', target: 'cloud', folder: d.cloudPick === 'folder' }); return; }

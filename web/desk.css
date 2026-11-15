@@ -401,3 +401,7 @@ main { max-width: 1100px; margin: 0; padding: 8px 28px 60px; }
 .fdempty svg { width: 22px; height: 22px; }
 @media (max-width: 900px) { .app { grid-template-columns: 64px minmax(0, 1fr); } .ritem span, .rbrand b, .rfoot { display: none; } .ritem { justify-content: center; padding: 0; } .fsplit { grid-template-columns: 1fr; } .fdetail { position: static; } .maprow { grid-template-columns: 1fr; } }
 #devHint, #feedWrap > .sec-head h2 { display: none; }
+/* 2.2.23 小云文字 */
+.ctbox { display: flex; gap: 10px; align-items: flex-end; margin: 0 0 12px; }
+.ctbox textarea { flex: 1; min-height: 58px; resize: vertical; line-height: 1.5; }
+.fi.ctext .ctx { margin-top: 3px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; user-select: text; }

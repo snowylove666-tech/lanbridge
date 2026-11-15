@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,7 +22,10 @@ sealed class Cloud {
  string Secret => Crypto.Hex(Crypto.Hmac(FamilyKey, "lanbridge/2/pool-auth"));
  Keys Group => new Keys(FamilyKey);
 
- public sealed class Item { public string id, name, from, link; public long size, at, stored; }
+ public sealed class Item { public string id, name, from, link, kind, text; public bool full; public long size, at, stored; }
+ /// <summary>文字条目的全文放进加密标签的上限（标签走请求头，中转限 16 KB）；更长的只放开头，全文要下载解密。</summary>
+ const int TextInMeta = 1500;
+ public const int TextMax = 200000;
  List<Item> cache = new List<Item>(); long usedMB, capMB, maxFileMB; long rev; string error;
  readonly Dictionary<string, string> keys = new Dictionary<string, string>();
 
@@ -50,7 +53,8 @@ sealed class Cloud {
       var m = J.Obj(g.Open(Convert.FromBase64String(f.Get("meta"))));
       string id = f.Get("id"), key = m.Get("key");
       lock (keys) keys[id] = key;
-      list.Add(new Item { id = id, name = m.Get("name"), from = m.Get("from"), size = m.Num("size"), stored = f.Num("size"), at = f.Num("at"), link = app.Relay.Base + "/d/" + id + "#" + key });
+      string kind = m.Get("kind"), text = kind == "text" ? m.Get("text") : null;
+      list.Add(new Item { id = id, name = m.Get("name"), from = m.Get("from"), kind = kind == "text" ? "text" : "file", text = text, full = text != null && m.Get("full") == "1", size = m.Num("size"), stored = f.Num("size"), at = f.Num("at"), link = app.Relay.Base + "/d/" + id + "#" + key });
      } catch { } // 别的设备组或旧密钥放的：看不到
     }
    lock (keys) { cache = list; usedMB = (long)Math.Ceiling(Convert.ToDouble(d.TryGetValue("usedMB", out var u) ? u : 0)); capMB = d.Num("capMB"); maxFileMB = d.Num("maxFileMB"); error = null; }
@@ -82,6 +86,42 @@ sealed class Cloud {
   });
  }
 
+ /// <summary>存一段文字到小云：存成 .txt（下载页也能看、能复制），标签里带上文字（长的只带开头）。直接传完再返回，出错马上告诉手机。</summary>
+ public void PutText(string text, string from) {
+  Need();
+  text = (text ?? "").Replace("\r\n", "\n");
+  if (text.Trim().Length == 0) throw new ApiError(400, "没有文字");
+  if (text.Length > TextMax) throw new ApiError(413, "文字太长了（最多 " + TextMax / 10000 + " 万字），请存成文件再放");
+  string first = Util.Clip(text.Trim().Split('\n')[0].Trim(), 16);
+  string dir = Path.Combine(app.Root, "stage", "cloud-" + Crypto.Token(6)); Directory.CreateDirectory(dir);
+  string path = Path.Combine(dir, Util.SafeName("文字 " + first) + ".txt");
+  try {
+   File.WriteAllText(path, text.Replace("\n", "\r\n"), new UTF8Encoding(true));
+   if (!Put(path, Path.GetFileName(path), from, text)) throw new ApiError(502, lastError ?? "没存上，稍后再试");
+  } finally { try { File.Delete(path); Directory.Delete(dir); } catch { } }
+ }
+
+ /// <summary>取文字条目的全文（标签里只有开头的长文字）：从中转下载密文，在这台电脑上解开。</summary>
+ public string ReadText(string id) {
+  Need();
+  string key; lock (keys) keys.TryGetValue(id ?? "", out key);
+  if (key == null) { List(); lock (keys) keys.TryGetValue(id ?? "", out key); }
+  if (key == null) throw new ApiError(404, "这条已经不在小云上了");
+  Item info; lock (keys) info = cache.FirstOrDefault(x => x.id == id);
+  if (info != null && info.full) return info.text;
+  try {
+   var r = Relay.Make(app.Relay.Base + "/f/" + id, "GET", 30000);
+   using var resp = (HttpWebResponse)r.GetResponse();
+   if (resp.ContentLength > 4 << 20) throw new ApiError(413, "这条太大，请下载");
+   using var s = resp.GetResponseStream(); var m = new MemoryStream();
+   var raw = Convert.FromBase64String(key.Replace('-', '+').Replace('_', '/') + new string('=', (4 - key.Length % 4) % 4));
+   new Keys(raw).OpenStream(s, resp.ContentLength, m, null);
+   var b = m.ToArray(); int at = 4 + BitConverter.ToInt32(b, 0);
+   return Encoding.UTF8.GetString(b, at, b.Length - at).TrimStart('\uFEFF').Replace("\r\n", "\n");
+  } catch (WebException we) when (we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound) { throw new ApiError(404, "这条已经不在小云上了（满了会先删最早的）"); }
+ }
+ string lastError;
+
  /// <summary>上传前先看放不放得下，免得手机传完一大段才知道。</summary>
  public void CheckRoom(long size) {
   Need();
@@ -96,7 +136,7 @@ sealed class Cloud {
 
  void Fail(string name, string why) => app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "send", dir = "out", status = "failed", to = new List<string> { "小云" }, note = why, files = new List<FeedFile> { new FeedFile { name = name } } });
 
- void Put(string path, string name, string from = null) {
+ bool Put(string path, string name, string from = null, string text = null) {
   var fi = new FileInfo(path);
   var nameBytes = Encoding.UTF8.GetBytes(name);
   long plain = 4 + nameBytes.Length + fi.Length, sealedLen = Keys.SealedLength(plain);
@@ -105,7 +145,9 @@ sealed class Cloud {
    long maxMB = MaxMB();
    if (maxMB > 0 && sealedLen > maxMB << 20) throw new ApiError(413, "小云一次最多放 " + maxMB + " MB");
    var key = Crypto.Random(32); var k = new Keys(key);
-   string meta = Convert.ToBase64String(Group.Seal(J.Bytes(new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key) })));
+   object m = text == null ? (object)new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key) }
+    : new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key), kind = "text", text = text.Length > TextInMeta ? text.Substring(0, TextInMeta) : text, full = text.Length > TextInMeta ? "0" : "1" };
+   string meta = Convert.ToBase64String(Group.Seal(J.Bytes(m)));
    var r = Make("/f/" + Space, "POST", 60000);
    r.ContentType = "application/octet-stream"; r.ContentLength = sealedLen; r.AllowWriteStreamBuffering = false; r.ReadWriteTimeout = 120000; r.Timeout = 600000;
    r.Headers["X-LB-Meta"] = meta;
@@ -118,12 +160,12 @@ sealed class Cloud {
    }
    var d = J.Obj(Client.ReadBody((HttpWebResponse)r.GetResponse()));
    lock (keys) keys[d.Get("id")] = B64Url(key);
-   app.Feed.Update(item.id, x => { x.status = "done"; x.done = x.total; x.note = "已放到小云，组里的电脑都能下载"; });
-   rev++; app.Changes.Bump();
+   app.Feed.Update(item.id, x => { x.status = "done"; x.done = x.total; x.note = text != null ? "文字已存到小云" : "已放到小云，组里的电脑都能下载"; });
+   rev++; app.Changes.Bump(); return true;
   } catch (Exception e) {
    string why = e is ApiError ? e.Message : e is WebException we && we.Response is HttpWebResponse er ? ErrorOf(er) : "上传没成功：" + e.Message;
    app.Feed.Update(item.id, x => { x.status = "failed"; x.note = why; });
-   Log.Write("小云上传失败：" + e.Message);
+   Log.Write("小云上传失败：" + e.Message); lastError = why; return false;
   }
  }
 

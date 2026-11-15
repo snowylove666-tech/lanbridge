@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -92,6 +92,8 @@ sealed class Router {
   switch (p) {
    case "/api/phone/state": res.Json(ph.State(phone, long.TryParse(q.Q("rev"), out var r) ? r : 0)); return;
    case "/api/phone/cloud": res.Json(app.Cloud.List()); return;
+   case "/api/phone/cloud-text" when q.Method == "POST": { var d = q.Json(Cloud.TextMax * 4 + 4096); app.Cloud.PutText(d.Get("text"), phone.name); res.Json(new { ok = true }); return; }
+   case "/api/phone/cloud-read": res.Json(new { text = app.Cloud.ReadText(q.Q("id")) }); return;
    case "/api/phone/history": res.Json(app.ClipLog.For(phone)); return;
    case "/api/phone/history-clear" when q.Method == "POST": res.Json(ph.HistoryClear(phone)); return;
    case "/api/phone/history-days" when q.Method == "POST": res.Json(ph.HistoryDays(phone, q.Json())); return;
@@ -175,6 +177,8 @@ sealed class Router {
    case "history-copy": HistoryCopy(d.Get("id")); break;
    case "cloud-download": app.Cloud.Download(d.Get("id")); break;
    case "cloud-delete": app.Cloud.Delete(d.Get("id")); break;
+   case "cloud-text": app.Cloud.PutText(d.Get("text"), null); break;
+   case "cloud-copy": if (!app.Clip.WriteText(app.Cloud.ReadText(d.Get("id")), true)) throw new ApiError(500, "没能放进剪贴板"); break;
    case "history-remove": app.History.Remove(d.Get("id")); break;
    case "history-clear": app.History.Clear(d.Get("phone")); break;
    case "pair-refresh": app.Phones.RefreshPair(); break;
