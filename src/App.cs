@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -134,6 +134,8 @@ sealed class App : ApplicationContext {
  }
 
  void OnCommand(string cmd, string[] files) {
+  // 守护任务每 5 分钟用 --background 叫一次，只是确认轻桥活着：不能弹窗口（以前会让任务栏图标一闪一闪）。
+  if (cmd == "noop") return;
   if (cmd == "send" && files != null && files.Length > 0) {
    // 只有一台电脑在线、也没连手机时直接发；否则打开窗口让人选。
    var online = Hub.Links().Where(l => l.State != "offline").ToList();

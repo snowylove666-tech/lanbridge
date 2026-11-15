@@ -1,4 +1,4 @@
-// 轻桥 2.0 · 手机网页（iPhone / 安卓，不用装 App）
+﻿// 轻桥 2.0 · 手机网页（iPhone / 安卓，不用装 App）
 const $ = id => document.getElementById(id);
 // 同一个网络里是 http://电脑地址/，经中转是 https://中转/m/电脑ID/：接口都相对这个路径。
 const BASE = location.pathname.replace(/[^/]*$/, '') || '/';
@@ -233,9 +233,9 @@ function homeHow() {
 const standalone = () => window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
-// ───────────── 三个页面：传送 / 历史 / 设置 ─────────────
+// ───────────── 四个页面：传送 / 历史 / 小云 / 设置 ─────────────
 
-const TABS = [['main', 'send', '传送'], ['hist', 'list', '历史'], ['set', 'gear', '设置']];
+const TABS = [['main', 'send', '传送'], ['hist', 'list', '历史'], ['cloud', 'cloud', '小云'], ['set', 'gear', '设置']];
 function go(v) { view = v; render(); scrollTo(0, 0); }
 function drawTabs() {
   const bar = $('tabbar'); bar.hidden = false; document.body.classList.add('tabbed');
@@ -256,6 +256,7 @@ function render() {
   drawTabs();
   if (view === 'wizard') { renderWizard(); return; }
   if (view === 'hist') { renderHist(); return; }
+  if (view === 'cloud') { renderCloud(); return; }
   if (view === 'set') { renderSet(); return; }
   const keepText = $('text') ? $('text').value : '';
   const focused = document.activeElement && document.activeElement.id === 'text';
@@ -276,8 +277,14 @@ function render() {
 }
 
 function renderHist() {
-  $('app').innerHTML = `${banners()}${histCard(true) || `<div class="card"><div class="ct">${icon('list')}电脑复制过的</div><div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div></div>`}${cloudCard()}`;
+  $('app').innerHTML = `${banners()}${histCard(true) || `<div class="card"><div class="ct">${icon('list')}电脑复制过的</div><div class="empty">电脑上复制过的文字、图片会留在这里，方便回头找。</div></div>`}`;
   bindHist();
+}
+
+// 小云单独一页（以前藏在历史页最下面，找不到）
+function renderCloud() {
+  const off = S && (S.cloud === undefined || S.cloud < 0);
+  $('app').innerHTML = `${banners()}${cloudCard() || `<div class="card"><div class="ct">${icon('cloud')}小云</div><div class="empty">${off ? '小云要电脑上的轻桥开着“跨网络”才能用。在电脑上打开轻桥 → 设置 → 跨网络，打开后这里就会出现。' : '正在读取小云…'}</div></div>`}`;
   if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
   if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
 }
