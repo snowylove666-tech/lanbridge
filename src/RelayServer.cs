@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -139,6 +139,20 @@ sealed class RelayServer : IDisposable {
   res.Bytes(m.ToArray(), type, 200, new Dictionary<string, string> { ["X-LB-Offline"] = "1" });
  }
 
+ /// <summary>电脑不在线时，中转自己给手机网页（2.2.24）：手机照样能打开轻桥，直接读写小云，电脑回来后收到。</summary>
+ static readonly string[] PhoneFiles = { "phone.html", "phone.js", "phone.css", "base.css", "icons.js", "lbcrypto.js", "icon.svg", "manifest.json" };
+ static bool PhoneAsset(string rest, Res res) {
+  string file = rest == "/" ? "phone.html" : rest.StartsWith("/assets/") ? rest.Substring(8) : null;
+  if (file == null || Array.IndexOf(PhoneFiles, file) < 0) return false;
+  var bytes = Embedded.Resource("web/" + file);
+  if (bytes == null) return false;
+  if (file == "phone.html") bytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(bytes).Replace("<meta charset=\"utf-8\">", "<meta charset=\"utf-8\"><meta name=\"lb-offline\" content=\"1\">"));
+  string ext = Path.GetExtension(file);
+  string type = ext == ".html" ? "text/html; charset=utf-8" : ext == ".js" ? "application/javascript; charset=utf-8" : ext == ".css" ? "text/css; charset=utf-8" : ext == ".svg" ? "image/svg+xml" : "application/json; charset=utf-8";
+  res.Bytes(bytes, type, 200, new Dictionary<string, string> { ["Cache-Control"] = "no-store" });
+  return true;
+ }
+
  void Tunnel(Req q, Res res, string kind, string key, string rest) {
   string id = key;
   // 手机的网络（流量、热点）常把闲着的连接悄悄掐掉，iPhone 却还拿旧连接发下一个请求，
@@ -156,6 +170,7 @@ sealed class RelayServer : IDisposable {
   if (!online) {
    // 手机直接打开网页时给一张看得懂的页面（以前是一行 JSON），电脑回来了自己刷新。
    if (kind == "m" && q.Method == "POST" && rest == "/v1/swap") { EchoBack(q, res); return; }
+   if (kind == "m" && q.Method == "GET" && PhoneAsset(rest, res)) return;
    if (kind == "m" && q.Method == "GET" && rest == "/") { res.Bytes(Encoding.UTF8.GetBytes(OfflinePage), "text/html; charset=utf-8", 503, new Dictionary<string, string> { ["Cache-Control"] = "no-store" }); return; }
    res.Json(new { error = "那台电脑现在不在线（没开机，或没运行轻桥）" }, 503); return;
   }
@@ -179,7 +194,9 @@ sealed class RelayServer : IDisposable {
    requests++;
   }
   // 快捷指令等不了一分钟（会弹错）：电脑 12 秒没接就当它不在，原样还回去
-  if (!p.Started.Wait(kind == "m" && rest == "/v1/swap" ? 12000 : (int)StartMs)) {
+  // 手机打开网页也等不了一分钟：8 秒没接就给中转自己的网页（电脑刚关时中转还以为它在线）
+  bool phoneGet = kind == "m" && q.Method == "GET" && (rest == "/" || rest.StartsWith("/assets/"));
+  if (!p.Started.Wait(kind == "m" && rest == "/v1/swap" ? 12000 : phoneGet ? 8000 : (int)StartMs)) {
    bool timedOut;
    lock (gate) { timedOut = !p.Replied; if (timedOut) { pending.Remove(rid); p.Replied = true; } }
    if (timedOut) {
@@ -189,6 +206,7 @@ sealed class RelayServer : IDisposable {
       string type = q.H("Content-Type"); if (type.Length == 0) type = "text/plain; charset=utf-8";
       res.Close = true; res.Bytes(m.ToArray(), type, 200, new Dictionary<string, string> { ["X-LB-Offline"] = "1" }); return; } catch { }
     }
+    if (phoneGet && PhoneAsset(rest, res)) return;
     res.Close = true; res.Json(new { error = "那台电脑没有响应" }, 504); return;
    }
   }

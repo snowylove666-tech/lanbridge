@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <!--
     轻桥中转（服务器版）：只有常驻中转 + 小云，不带窗口、剪贴板和 WebView2。
     和电脑版 LanBridge.exe 的 relay-server 模式是同一份代码（src/RelayServer.cs、src/FilePool.cs 等），只是编得更小，
@@ -35,5 +35,13 @@
     <Compile Include="..\..\src\RelayServer.cs" />
     <Compile Include="..\..\src\FilePool.cs" />
     <EmbeddedResource Include="..\..\web\pool.html" LogicalName="web/pool.html" />
+    <EmbeddedResource Include="..\..\web\phone.html" LogicalName="web/phone.html" />
+    <EmbeddedResource Include="..\..\web\phone.js" LogicalName="web/phone.js" />
+    <EmbeddedResource Include="..\..\web\phone.css" LogicalName="web/phone.css" />
+    <EmbeddedResource Include="..\..\web\base.css" LogicalName="web/base.css" />
+    <EmbeddedResource Include="..\..\web\icons.js" LogicalName="web/icons.js" />
+    <EmbeddedResource Include="..\..\web\lbcrypto.js" LogicalName="web/lbcrypto.js" />
+    <EmbeddedResource Include="..\..\web\icon.svg" LogicalName="web/icon.svg" />
+    <EmbeddedResource Include="..\..\web\manifest.json" LogicalName="web/manifest.json" />
   </ItemGroup>
 </Project>

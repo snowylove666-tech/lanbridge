@@ -22,7 +22,7 @@ sealed class Cloud {
  string Secret => Crypto.Hex(Crypto.Hmac(FamilyKey, "lanbridge/2/pool-auth"));
  Keys Group => new Keys(FamilyKey);
 
- public sealed class Item { public string id, name, from, link, kind, text; public bool full; public long size, at, stored; }
+ public sealed class Item { public string id, name, from, link, kind, text; public bool full, inbox; public long size, at, stored; }
  /// <summary>文字条目的全文放进加密标签的上限（标签走请求头，中转限 16 KB）；更长的只放开头，全文要下载解密。</summary>
  const int TextInMeta = 1500;
  public const int TextMax = 200000;
@@ -50,11 +50,11 @@ sealed class Cloud {
    if (d.TryGetValue("files", out var raw) && raw is System.Collections.IEnumerable e)
     foreach (var x in e) if (x is Dictionary<string, object> f) {
      try {
-      var m = J.Obj(g.Open(Convert.FromBase64String(f.Get("meta"))));
+      var m = J.Obj(OpenMeta(Convert.FromBase64String(f.Get("meta"))));
       string id = f.Get("id"), key = m.Get("key");
       lock (keys) keys[id] = key;
       string kind = m.Get("kind"), text = kind == "text" ? m.Get("text") : null;
-      list.Add(new Item { id = id, name = m.Get("name"), from = m.Get("from"), kind = kind == "text" ? "text" : "file", text = text, full = text != null && m.Get("full") == "1", size = m.Num("size"), stored = f.Num("size"), at = f.Num("at"), link = app.Relay.Base + "/d/" + id + "#" + key });
+      list.Add(new Item { id = id, name = m.Get("name"), from = m.Get("from"), kind = kind == "text" ? "text" : "file", text = text, full = text != null && m.Get("full") == "1", inbox = m.Get("inbox") == "1", size = m.Num("size"), stored = f.Num("size"), at = f.Num("at"), link = app.Relay.Base + "/d/" + id + "#" + key });
      } catch { } // 别的设备组或旧密钥放的：看不到
     }
    lock (keys) { cache = list; usedMB = (long)Math.Ceiling(Convert.ToDouble(d.TryGetValue("usedMB", out var u) ? u : 0)); capMB = d.Num("capMB"); maxFileMB = d.Num("maxFileMB"); error = null; }
@@ -120,7 +120,46 @@ sealed class Cloud {
    return Encoding.UTF8.GetString(b, at, b.Length - at).TrimStart('\uFEFF').Replace("\r\n", "\n");
   } catch (WebException we) when (we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound) { throw new ApiError(404, "这条已经不在小云上了（满了会先删最早的）"); }
  }
- string lastError;
+ string lastError;
+
+ // ───── 手机在电脑关着时直接存进小云的东西（2.2.24） ─────
+ /// <summary>小云条目标签的钥匙：从设备组密钥派生，只给小云用。手机拿它就能在电脑关机时自己读写小云，但拿不到电脑之间同步用的密钥。</summary>
+ byte[] MetaKey => Crypto.Hmac(FamilyKey, "lanbridge/2/pool-meta");
+ Keys MetaKeys => new Keys(MetaKey);
+ byte[] OpenMeta(byte[] sealedMeta) { try { return MetaKeys.Open(sealedMeta); } catch { return Group.Open(sealedMeta); } }
+
+ /// <summary>交给手机的小云通行证（电脑在线时随状态一起给，手机存起来，电脑关机时用）。</summary>
+ public object PhonePass() => Ready && app.Relay.Base != null ? new { space = Space, auth = Secret, mk = B64Url(MetaKey) } : null;
+
+ long inboxAt;
+ /// <summary>电脑回来后看一眼：手机在电脑关着时发的文字、放的文件，放进“动态”和手机历史，提醒一下。</summary>
+ public void CheckInbox(bool force = false) {
+  if (!Ready || (!force && Util.Ms() - inboxAt < 90000)) return;
+  inboxAt = Util.Ms();
+  List(); List<Item> fresh;
+  lock (keys) lock (app.Gate) fresh = cache.Where(x => x.inbox && !C.cloudSeen.Contains(x.id)).OrderBy(x => x.at).ToList();
+  if (fresh.Count == 0) return;
+  int texts = 0, files = 0; string from = null;
+  foreach (var x in fresh) {
+   from = x.from;
+   try {
+    if (x.kind == "text") {
+     string text = x.full ? x.text : ReadText(x.id);
+     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "text", dir = "in", from = x.from, to = new List<string> { C.deviceName }, text = text, status = "done", note = "电脑关着时发的，存在小云里，点“再复制一次”放进剪贴板", total = text.Length, time = x.at });
+     Phone p; lock (app.Gate) p = C.phones.FirstOrDefault(ph => ph.name == x.from);
+     if (p != null) app.History.Add(p, "text", text, null);
+     texts++;
+    } else {
+     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "info", dir = "in", from = x.from, status = "done", note = x.from + " 在电脑关着时放进小云：" + x.name + "（在小云里下载）", time = x.at });
+     files++;
+    }
+    lock (app.Gate) { C.cloudSeen.Add(x.id); if (C.cloudSeen.Count > 500) C.cloudSeen.RemoveRange(0, C.cloudSeen.Count - 500); }
+   } catch (Exception e) { Log.Write("取手机离线内容失败：" + e.Message); }
+  }
+  app.Save(); app.Changes.Bump();
+  Log.Write("电脑回来了：收到手机离线时发的 " + texts + " 段文字、" + files + " 个文件");
+  if (C.notify) app.Notify((from ?? "手机") + " 在电脑关着时发来了内容", (texts > 0 ? texts + " 段文字" : "") + (texts > 0 && files > 0 ? "、" : "") + (files > 0 ? files + " 个文件（在小云里）" : "") + "\n在“动态”里看", app.ShowWindow);
+ }
 
  /// <summary>上传前先看放不放得下，免得手机传完一大段才知道。</summary>
  public void CheckRoom(long size) {
@@ -147,7 +186,7 @@ sealed class Cloud {
    var key = Crypto.Random(32); var k = new Keys(key);
    object m = text == null ? (object)new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key) }
     : new { v = 1, name, size = fi.Length, from = from ?? C.deviceName, key = B64Url(key), kind = "text", text = text.Length > TextInMeta ? text.Substring(0, TextInMeta) : text, full = text.Length > TextInMeta ? "0" : "1" };
-   string meta = Convert.ToBase64String(Group.Seal(J.Bytes(m)));
+   string meta = Convert.ToBase64String(MetaKeys.Seal(J.Bytes(m)));
    var r = Make("/f/" + Space, "POST", 60000);
    r.ContentType = "application/octet-stream"; r.ContentLength = sealedLen; r.AllowWriteStreamBuffering = false; r.ReadWriteTimeout = 120000; r.Timeout = 600000;
    r.Headers["X-LB-Meta"] = meta;

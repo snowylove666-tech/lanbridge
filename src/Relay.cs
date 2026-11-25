@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -131,6 +131,7 @@ sealed class Relay {
     long max = d.Num("max"); if (max > 0) MaxBody = max;
     long pool = d.Num("pool"); if (pool != PoolMB) { PoolMB = pool; app.Changes.Bump(); }
     SetState("ok", null);
+    if (pool > 0) Util.Thread("cloud-inbox", () => { try { app.Cloud.CheckInbox(); } catch (Exception ex) { Log.Write("看小云收件失败：" + ex.Message); } });
     if (d.TryGetValue("reqs", out var raw) && raw is IEnumerable list)
      foreach (var x in list) if (x is Dictionary<string, object> it) { var item = it; Util.Thread("relay-req", () => Serve(item)); }
    } catch (Exception e) {

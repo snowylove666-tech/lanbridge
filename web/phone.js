@@ -89,12 +89,16 @@ async function loop() {
       const r = await fetch(U('/api/phone/state?rev=' + (first ? 0 : rev)), { headers: { 'X-LB-Token': token } });
       if (r.status === 401) { localStorage.removeItem(K + 't'); token = ''; const j = await r.json().catch(() => ({})); $('tabbar').hidden = true; document.body.classList.remove('tabbed'); showJoin(j.error); return; }
       if (!r.ok) { // 中转在，电脑不在（关机、睡眠、轻桥没运行）：留在原页面等它回来
-        offline = true; if (S) render(); else { setConn('电脑不在线', false); $('app').innerHTML = offlineCard(); }
+        offline = true;
+        if (!S) { const c = cachedS(); if (c) S = Object.assign({ clip: null, inbox: [], cloud: -1, paused: false, auto: 0, hist: 0 }, c); }
+        if (S) { render(); refreshCloud(); } else { setConn('电脑不在线', false); $('app').innerHTML = offlineCard(); }
         await sleep(4000); continue;
       }
       offline = false;
-      S = await r.json(); rev = S.rev; first = false;
+      const was = offline; S = await r.json(); rev = S.rev; first = false; rememberS(S); if (was) cloudKey = null;
       // 电脑上的轻桥升级了：网页换成新版（每个版本只刷一次，免得来回刷）
+      // 这一页是电脑关着时中转给的：电脑回来了，换成电脑上的网页
+      if (document.querySelector('meta[name=lb-offline]')) { alive = false; location.reload(); return; }
       const pv = (document.querySelector('meta[name=lb-ver]') || {}).content;
       if (pv && S.ver && S.ver !== pv && sessionStorage.getItem('lb-reloaded') !== S.ver) { sessionStorage.setItem('lb-reloaded', S.ver); alive = false; location.reload(); return; }
       if (!viaRelay && S.relay) { alive = false; location.replace(S.relay + '#t=' + encodeURIComponent(token) + '&moved=1'); return; }
@@ -202,6 +206,13 @@ function bindHist() {
 // 小云：电脑那边的文件池。手机点“下载”打开链接，下载页在手机上解密（电脑关着也能下）。
 let cloudList = null, cloudAt = 0, cloudKey = null;
 async function refreshCloud() {
+  if (offline) {
+    if (!canDirect()) { cloudList = null; return; }
+    if (cloudKey === 'direct' && Date.now() - cloudAt < 30000) return;
+    cloudKey = 'direct'; cloudAt = Date.now();
+    try { cloudList = await poolList(); } catch (e) { cloudList = null; toast(e.message, true); }
+    render(); return;
+  }
   const k = S && S.cloud; if (k === undefined || k < 0) { cloudList = null; return; }
   if (k === cloudKey && Date.now() - cloudAt < 60000) return;
   cloudKey = k; cloudAt = Date.now();
@@ -251,7 +262,7 @@ function drawTabs() {
 }
 
 function banners() {
-  return `${offline ? '<div class="banner bad"><b>电脑现在不在线</b>：电脑关机、睡眠了，或者上面的轻桥没在运行。电脑一回来这里会自己恢复，不用重新扫码。</div>' : ''}
+  return `${offline ? `<div class="banner bad"><b>电脑现在不在线</b>：电脑关机、睡眠了，或者上面的轻桥没在运行。${canDirect() ? '文字、照片可以先存进小云，电脑开机后会收到。' : '电脑一回来这里会自己恢复，不用重新扫码。'}</div>` : ''}
     ${S.paused ? '<div class="banner">电脑上的轻桥暂停了同步，恢复后才能互传。</div>' : ''}
     ${inWeChat() ? '<div class="banner">现在是在微信里打开的：微信里不能放到主屏幕，复制也常被拦。请点右上角 <b>···</b> → <b>在默认浏览器中打开</b>（Safari），以后都从那边用。</div>' : ''}`;
 }
@@ -263,6 +274,7 @@ function render() {
   if (view === 'hist') { renderHist(); return; }
   if (view === 'cloud') { renderCloud(); return; }
   if (view === 'set') { renderSet(); return; }
+  if (offline) { if (document.activeElement && document.activeElement.id === 'offText') return; const k = $('offText') ? $('offText').value : ''; renderOffline(); if ($('offText')) $('offText').value = k; return; }
   const keepText = $('text') ? $('text').value : '';
   const focused = document.activeElement && document.activeElement.id === 'text';
   if (focused) { // 正在输入时只更新剪贴板卡片，不打断输入
@@ -292,15 +304,15 @@ function renderCloud() {
   if (box && document.activeElement === box) return; // 正在输入：不重画，免得打断
   const keep = box ? box.value : '';
   const off = S && (S.cloud === undefined || S.cloud < 0);
-  $('app').innerHTML = `${banners()}${cloudCard() || `<div class="card"><div class="ct">${icon('cloud')}小云</div><div class="empty">${off ? '小云要电脑上的轻桥开着“跨网络”才能用。在电脑上打开轻桥 → 设置 → 跨网络，打开后这里就会出现。' : '正在读取小云…'}</div></div>`}`;
+  $('app').innerHTML = `${banners()}${cloudCard() || `<div class="card"><div class="ct">${icon('cloud')}小云</div><div class="empty">${offline ? (canDirect() ? '正在读取小云…' : '电脑不在线。下次电脑开着时打开一次这个网页，以后电脑关着也能直接用小云。') : off ? '小云要电脑上的轻桥开着“跨网络”才能用。在电脑上打开轻桥 → 设置 → 跨网络，打开后这里就会出现。' : '正在读取小云…'}</div></div>`}`;
   if ($('cloudText')) $('cloudText').value = keep;
   if ($('cloudPick')) $('cloudPick').onclick = () => $('cloudFiles').click();
-  if ($('cloudFiles')) $('cloudFiles').onchange = () => { upload([...$('cloudFiles').files], true); $('cloudFiles').value = ''; };
+  if ($('cloudFiles')) $('cloudFiles').onchange = () => { const fs = [...$('cloudFiles').files]; if (offline) poolUpload(fs); else upload(fs, true); $('cloudFiles').value = ''; };
   if ($('cloudSave')) $('cloudSave').onclick = async () => {
     const t = $('cloudText').value;
     if (!t.trim()) { toast('先输入或粘贴文字', true); $('cloudText').focus(); return; }
     const b = $('cloudSave'); b.disabled = true; b.textContent = '正在存…';
-    try { await call('/api/phone/cloud-text', { text: t }); $('cloudText').value = ''; $('cloudText').blur(); toast('已存到小云'); cloudKey = null; await refreshCloud(); renderCloud(); }
+    try { if (offline) await poolPutText(t); else await call('/api/phone/cloud-text', { text: t }); $('cloudText').value = ''; $('cloudText').blur(); toast('已存到小云'); cloudKey = null; await refreshCloud(); renderCloud(); }
     catch (e) { toast(e.message, true); b.disabled = false; b.innerHTML = `${icon('cloud')}存到小云`; }
   };
   document.querySelectorAll('[data-ccopy]').forEach(b => b.onclick = async () => {
@@ -309,9 +321,93 @@ function renderCloud() {
     // 长文字：先取全文（iPhone 要求复制发生在点按里，所以取到后再点一次）
     if (x.fullText) { const ok = copyText(x.fullText); toast(ok ? '已复制全文' : '复制没成功', !ok); return; }
     b.disabled = true;
-    try { const r = await call('/api/phone/cloud-read?id=' + encodeURIComponent(x.id)); x.fullText = r.text; b.disabled = false; b.innerHTML = `${icon('copy')}复制全文`; toast('全文取好了，再点一次“复制全文”'); }
+    try { x.fullText = offline ? await poolReadText(x) : (await call('/api/phone/cloud-read?id=' + encodeURIComponent(x.id))).text; b.disabled = false; b.innerHTML = `${icon('copy')}复制全文`; toast('全文取好了，再点一次“复制全文”'); }
     catch (e) { b.disabled = false; toast(e.message, true); }
   });
+}
+
+// ───────────── 电脑不在线时：手机直接读写小云（2.2.24） ─────────────
+// 电脑在线时把“小云通行证”给手机（S.pool：空间、口令、标签钥匙），手机存起来；
+// 电脑关着时中转自己给这个网页，手机用通行证直接存文字、放文件、看小云，电脑回来后在“动态”里收到。
+const POOL_MAX = 50 << 20;
+function poolPass() { try { return JSON.parse(localStorage.getItem(K + 'pool') || 'null'); } catch { return null; } }
+function cachedS() { try { return JSON.parse(localStorage.getItem(K + 'S') || 'null'); } catch { return null; } }
+function rememberS(s) {
+  try {
+    localStorage.setItem(K + 'S', JSON.stringify({ pc: s.pc, me: s.me, ver: s.ver, relay: s.relay }));
+    if (s.pool) localStorage.setItem(K + 'pool', JSON.stringify(s.pool));
+  } catch { }
+}
+const canDirect = () => viaRelay && typeof LBC !== 'undefined' && !!poolPass();
+async function poolList() {
+  const p = poolPass(), mk = LBC.unb64(p.mk);
+  const r = await fetch('/f/' + p.space + '/list', { headers: { 'X-LB-Pool': p.auth }, cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status === 401 ? '小云通行证过期了，等电脑开机后再打开一次这个网页' : '小云暂时打不开（' + r.status + '）');
+  const d = await r.json(), files = [];
+  for (const f of d.files || []) {
+    try {
+      const m = JSON.parse(LBC.td.decode(LBC.open(mk, LBC.unb64(f.meta))));
+      const text = m.kind === 'text' ? m.text : null;
+      files.push({ id: f.id, name: m.name, from: m.from, kind: m.kind === 'text' ? 'text' : 'file', text, full: text != null && m.full === '1', size: m.size, at: f.at, key: m.key, link: location.origin + '/d/' + f.id + '#' + m.key });
+    } catch { } // 旧版电脑放的（标签用的是别的钥匙）：电脑开机后在电脑那边看
+  }
+  return { ready: true, direct: true, files, usedMB: Math.ceil(d.usedMB || 0), capMB: d.capMB || 0, maxFileMB: d.maxFileMB || 0 };
+}
+/** 加密后放进小云，标上“手机离线时放的”，电脑回来会收进动态。 */
+async function poolPut(name, bytes, extra) {
+  const p = poolPass(), mk = LBC.unb64(p.mk), fk = LBC.random(32), nb = LBC.te.encode(name);
+  const plain = new Uint8Array(4 + nb.length + bytes.length);
+  new DataView(plain.buffer).setInt32(0, nb.length, true); plain.set(nb, 4); plain.set(bytes, 4 + nb.length);
+  const body = LBC.seal(fk, plain);
+  const meta = Object.assign({ v: 1, name, size: bytes.length, from: (S && S.me) || '手机', key: LBC.b64url(fk), inbox: '1' }, extra || {});
+  const r = await fetch('/f/' + p.space, { method: 'POST', headers: { 'X-LB-Pool': p.auth, 'X-LB-Meta': LBC.b64(LBC.seal(mk, LBC.te.encode(JSON.stringify(meta)))), 'Content-Type': 'application/octet-stream' }, body });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || '没存上（' + r.status + '）');
+}
+async function poolPutText(text) {
+  text = text.replace(/\r\n/g, '\n');
+  if (!text.trim()) throw new Error('先输入或粘贴文字');
+  if (text.length > 200000) throw new Error('文字太长了，请存成文件再放');
+  const first = text.trim().split('\n')[0].trim().slice(0, 16).replace(/[\\/:*?"<>|]/g, '_');
+  const b = LBC.te.encode(text.replace(/\n/g, '\r\n')), all = new Uint8Array(3 + b.length); all.set([0xef, 0xbb, 0xbf]); all.set(b, 3);
+  await poolPut('文字 ' + first + '.txt', all, { kind: 'text', text: text.slice(0, 1500), full: text.length > 1500 ? '0' : '1' });
+}
+async function poolReadText(x) {
+  const r = await fetch('/f/' + x.id, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status === 404 ? '这条已经不在小云上了' : '取不到全文（' + r.status + '）');
+  const plain = LBC.open(LBC.unb64(x.key), new Uint8Array(await r.arrayBuffer()));
+  const n = new DataView(plain.buffer, plain.byteOffset).getInt32(0, true);
+  return LBC.td.decode(plain.subarray(4 + n)).replace(/^﻿/, '').replace(/\r\n/g, '\n');
+}
+async function poolUpload(files) {
+  for (const f of files) {
+    if (f.size > POOL_MAX) { toast(f.name + ' 太大（电脑不在线时一次最多 50 MB）', true); continue; }
+    const u = { name: f.name, p: 0.3, cloud: true }; uploads.unshift(u); render();
+    try { await poolPut(f.name, new Uint8Array(await f.arrayBuffer())); u.done = true; }
+    catch (e) { u.err = e.message; }
+    render();
+  }
+  cloudKey = null; refreshCloud();
+}
+function renderOffline() {
+  const can = canDirect();
+  $('app').innerHTML = `${banners()}
+    ${can ? `<div class="card"><div class="ct">${icon('send')}先存进小云</div>
+      <div class="setp">电脑现在关着。文字、照片先存进小云，<b>电脑开机后会在“动态”里收到</b>；在小云页也能随时复制、下载。</div>
+      <textarea class="input ctin" id="offText" rows="4" placeholder="输入或粘贴文字"></textarea>
+      <div class="actions"><button class="btn primary big" id="offSave">${icon('cloud')}存到小云</button></div>
+      <div class="actions"><button class="btn soft big" id="offPick">${icon('upload')}照片 / 文件存到小云</button></div>
+      <div id="cups">${upsHtml(true)}</div>
+      <input type="file" id="offFiles" multiple hidden></div>`
+    : `<div class="card"><div class="ct">${icon('cloud')}电脑不在线</div><div class="setp">电脑开机、轻桥运行后这里会自己恢复。下次电脑开着时打开一次这个网页，以后电脑关着也能把文字、照片先存进小云。</div></div>`}`;
+  if (!can) return;
+  $('offSave').onclick = async () => {
+    const b = $('offSave'); b.disabled = true;
+    try { await poolPutText($('offText').value); $('offText').value = ''; toast('已存到小云，电脑开机后会收到'); cloudKey = null; refreshCloud(); }
+    catch (e) { toast(e.message, true); } finally { b.disabled = false; }
+  };
+  $('offPick').onclick = () => $('offFiles').click();
+  $('offFiles').onchange = () => { poolUpload([...$('offFiles').files]); $('offFiles').value = ''; };
 }
 
 function renderSet() {

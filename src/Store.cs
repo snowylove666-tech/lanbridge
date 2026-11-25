@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -48,6 +48,8 @@ public sealed class Config {
  public List<Member> members = new List<Member>();
  public List<string> blocked = new List<string>();
  public List<Phone> phones = new List<Phone>();
+ /// <summary>已经收进“动态”的手机离线内容（小云条目 id）。</summary>
+ public List<string> cloudSeen = new List<string>();
 }
 
 /// <summary>设置文件：%LOCALAPPDATA%\LanBridge\config.dat，用当前 Windows 账户加密（DPAPI）。</summary>
