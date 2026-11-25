@@ -50,6 +50,8 @@ public sealed class Config {
  public List<Phone> phones = new List<Phone>();
  /// <summary>已经收进“动态”的手机离线内容（小云条目 id）。</summary>
  public List<string> cloudSeen = new List<string>();
+ /// <summary>快捷方式按哪一版图标建的；图标换了就重建一次“发送到”快捷方式。</summary>
+ public int iconVer;
 }
 
 /// <summary>设置文件：%LOCALAPPDATA%\LanBridge\config.dat，用当前 Windows 账户加密（DPAPI）。</summary>

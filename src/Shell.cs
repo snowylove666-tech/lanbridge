@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -96,7 +96,9 @@ static class Shell {
  public static void SetSendTo(bool on) {
   try {
    foreach (var old in new[] { "轻桥 · 发到 iPhone.lnk" }) { var p = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SendTo), old); if (File.Exists(p)) File.Delete(p); }
-   if (!on) { if (File.Exists(SendToLink)) File.Delete(SendToLink); return; }
+   // 先删再建：换了图标后 Windows 和别的软件按文件时间认新图标
+   if (File.Exists(SendToLink)) File.Delete(SendToLink);
+   if (!on) return;
    var t = Type.GetTypeFromProgID("WScript.Shell"); object sh = Activator.CreateInstance(t);
    object link = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, sh, new object[] { SendToLink });
    var lt = link.GetType();
@@ -108,6 +110,9 @@ static class Shell {
    Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(sh);
   } catch (Exception e) { Log.Write("“发送到”设置失败：" + e.Message); }
  }
+ [DllImport("shell32.dll")] static extern void SHChangeNotify(int eventId, uint flags, IntPtr a, IntPtr b);
+ /// <summary>告诉资源管理器图标变了（重建图标缓存里的这一项）。</summary>
+ public static void IconsChanged() { try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { } }
 
  /// <summary>别的设备连不进来时用：弹一次管理员确认，放行轻桥（所有网络类型，包括被 Windows 标成“公用”的家庭 Wi-Fi）。</summary>
  public static bool AllowFirewall() {
