@@ -104,11 +104,31 @@ static class Shell {
    var lt = link.GetType();
    lt.InvokeMember("TargetPath", BindingFlags.SetProperty, null, link, new object[] { ExePath });
    lt.InvokeMember("Arguments", BindingFlags.SetProperty, null, link, new object[] { "--send" });
-   lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] { ExePath + ",0" });
+   lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] { IconLoc });
    lt.InvokeMember("Description", BindingFlags.SetProperty, null, link, new object[] { "用轻桥发送到其他设备" });
    lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
    Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(sh);
   } catch (Exception e) { Log.Write("“发送到”设置失败：" + e.Message); }
+ }
+ /// <summary>快捷方式用的图标文件（数据目录里的 icon-版本.ico）。换图标时换文件名，Windows 图标缓存认不出旧的，就会读新图标。</summary>
+ public static string IconPath;
+ static string IconLoc => IconPath != null && File.Exists(IconPath) ? IconPath + ",0" : ExePath + ",0";
+ public static string StartMenuLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "PrismBlue 轻桥.lnk");
+ /// <summary>建开始菜单里的“PrismBlue 轻桥”（Windows 搜索、搜的快按它找到应用）。只在换图标版本时调一次，平时启动不查。</summary>
+ public static void MakeStartMenu() {
+  try {
+   var t = Type.GetTypeFromProgID("WScript.Shell"); object sh = Activator.CreateInstance(t);
+   if (File.Exists(StartMenuLink)) File.Delete(StartMenuLink);
+   object link = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, sh, new object[] { StartMenuLink });
+   var lt = link.GetType();
+   lt.InvokeMember("TargetPath", BindingFlags.SetProperty, null, link, new object[] { ExePath });
+   lt.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, link, new object[] { Path.GetDirectoryName(ExePath) });
+   lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] { IconLoc });
+   lt.InvokeMember("Description", BindingFlags.SetProperty, null, link, new object[] { "PrismBlue 轻桥：电脑和手机互传文字、图片、文件" });
+   lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
+   Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(sh);
+   Log.Write("开始菜单加上了 PrismBlue 轻桥");
+  } catch (Exception e) { Log.Write("开始菜单快捷方式没建成：" + e.Message); }
  }
  [DllImport("shell32.dll")] static extern void SHChangeNotify(int eventId, uint flags, IntPtr a, IntPtr b);
  /// <summary>告诉资源管理器图标变了（重建图标缓存里的这一项）。</summary>

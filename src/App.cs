@@ -83,9 +83,14 @@ sealed class App : ApplicationContext {
   try { File.WriteAllText(Path.Combine(Root, "desk-url.txt"), DeskUrl); } catch { }
 
   if (!o.NoShell && !C.shellApplied) { Shell.SetAutostart(C.autostart); Shell.SetSendTo(C.sendTo); C.shellApplied = true; Save(); }
-  // 2.2.25 换了白云图标：“发送到”里的快捷方式重建一次，资源管理器刷新图标
-  const int IconVer = 2;
-  if (!o.NoShell && C.iconVer != IconVer) { if (C.sendTo) Shell.SetSendTo(true); Shell.IconsChanged(); C.iconVer = IconVer; Save(); }
+  // 换图标时把 IconVer 加 1：只在那一次写图标文件、重建“发送到”和开始菜单的快捷方式，平时启动什么都不查
+  const int IconVer = 3;
+  Shell.IconPath = Path.Combine(Root, "icon-" + IconVer + ".ico");
+  if (!o.NoShell && C.iconVer != IconVer) {
+   try { var ico = Embedded.Resource("app.ico"); if (ico != null) File.WriteAllBytes(Shell.IconPath, ico); } catch (Exception e) { Log.Write("图标文件没写成：" + e.Message); }
+   if (C.sendTo) Shell.SetSendTo(true);
+   Shell.MakeStartMenu(); Shell.IconsChanged(); C.iconVer = IconVer; Save();
+  }
   // 守护任务跟着“开机自动启动”走；老版本装的没有它，每次启动补一下。
   if (!o.NoShell) { bool on = C.autostart; System.Threading.ThreadPool.QueueUserWorkItem(_ => Shell.SetGuard(on)); }
   if (!o.Headless) tray = new Tray(this);
