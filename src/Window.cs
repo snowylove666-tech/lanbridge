@@ -117,41 +117,15 @@ sealed class Tray : IDisposable {
  public void Dispose() { icon.Visible = false; icon.Dispose(); }
 }
 
-/// <summary>PrismBlue 轻桥的标志（Prism 家族，照 PrismSpot 的样子）：深色玻璃方块，白色同步环绕着 Prism 三色棱镜。
-/// 界面、托盘、手机主屏图标都用它；网页里的同一张图是 web/icon.svg，两处几何一致（256 单位）。</summary>
+/// <summary>PrismBlue 轻桥的标志：白云玻璃方块（2.2.25 起用用户给的图，tools/make_icon.py 从 art/icon-source.png 做出 web/icon.png、web/touch.png、LanBridge.ico）。</summary>
 static class Brand {
- static readonly Color White = Color.FromArgb(0xf4, 0xf6, 0xfb);
+ static Bitmap Load(string name) { var b = Embedded.Resource(name); return b == null ? null : new Bitmap(new MemoryStream(b)); }
  public static Bitmap Render(int s, bool rounded = true) {
   var b = new Bitmap(s, s, PixelFormat.Format32bppArgb);
+  using var src = Load(rounded ? "web/icon.png" : "web/touch.png");
   using var g = Graphics.FromImage(b);
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-  float k = s / 256f;
-  // 小图标上细线会糊，环加粗、箭头放大
-  float w = s <= 20 ? 30 : s <= 32 ? 24 : s <= 48 ? 20 : 16, ah = w / 16f;
-  using (var bg = new LinearGradientBrush(new PointF(0, 0), new PointF(s, s), Color.Black, Color.Black)) {
-   bg.InterpolationColors = new ColorBlend { Colors = new[] { Color.FromArgb(0x2b, 0x36, 0x54), Color.FromArgb(0x14, 0x1a, 0x29), Color.FromArgb(0x0a, 0x0d, 0x16) }, Positions = new[] { 0f, .5f, 1f } };
-   if (rounded) {
-    float m = s >= 64 ? 8 * k : 0, r = s >= 64 ? 56 * k : 60 * k;
-    using var path = Round(m, m, s - 2 * m, s - 2 * m, r); g.FillPath(bg, path);
-    if (s >= 64) using (var edge = new Pen(Color.FromArgb(200, 0x5a, 0x66, 0x84), 2 * k)) g.DrawPath(edge, path);
-   } else g.FillRectangle(bg, 0, 0, s, s);
-  }
-  float cx = 128 * k, cy = 128 * k, R = 70 * k;
-  using (var ring = new Pen(White, w * k) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-  using (var head = new SolidBrush(White)) {
-   foreach (var start in new[] { 200f, 20f }) {
-    g.DrawArc(ring, cx - R, cy - R, 2 * R, 2 * R, start, 112);
-    double e = (start + 112) * Math.PI / 180; float x = cx + R * (float)Math.Cos(e), y = cy + R * (float)Math.Sin(e);
-    float tx = -(float)Math.Sin(e), ty = (float)Math.Cos(e), nx = (float)Math.Cos(e), ny = (float)Math.Sin(e);
-    float L = 24 * k * ah, W = 18 * k * ah, bk = 4 * k * ah, bx = x - tx * bk, by = y - ty * bk;
-    g.FillPolygon(head, new[] { new PointF(x + tx * L, y + ty * L), new PointF(bx + nx * W, by + ny * W), new PointF(bx - nx * W, by - ny * W) });
-   }
-  }
-  float pk = 1.4f * k, px = 128 * k - 32 * pk, py = 126 * k - 30 * pk;
-  PointF P(float x, float y) => new PointF(px + x * pk, py + y * pk);
-  using (var f = new SolidBrush(White)) g.FillPolygon(f, new[] { P(32, 5), P(5, 55), P(32, 44) });
-  using (var f = new SolidBrush(Color.FromArgb(0xec, 0x4f, 0x22))) g.FillPolygon(f, new[] { P(32, 5), P(32, 44), P(59, 55) });
-  using (var f = new SolidBrush(Color.FromArgb(0x7d, 0x80, 0x8b))) g.FillPolygon(f, new[] { P(5, 55), P(32, 44), P(59, 55) });
+  g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+  if (src != null) g.DrawImage(src, 0, 0, s, s);
   return b;
  }
  static GraphicsPath Round(float x, float y, float w, float h, float r) {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -20,8 +20,11 @@ sealed class FilePool {
  public sealed class Index { public List<Entry> files = new List<Entry>(); public Dictionary<string, string> spaces = new Dictionary<string, string>(); }
  Index ix; long reserved;
 
- public FilePool(string dir, long cap, long maxFile) {
-  this.dir = dir; Cap = cap; MaxFile = Math.Min(cap, maxFile);
+ /// <summary>放进来超过这么久就删（2.2.25 起默认 3 天；0 = 不按时间删）。</summary>
+ public readonly long MaxAgeMs;
+ readonly Timer expireTimer;
+ public FilePool(string dir, long cap, long maxFile, double days = 3) {
+  this.dir = dir; Cap = cap; MaxFile = Math.Min(cap, maxFile); MaxAgeMs = (long)(days * 86400000);
   Directory.CreateDirectory(dir);
   try { ix = J.Parse<Index>(File.ReadAllText(IndexPath, Encoding.UTF8)); } catch { ix = null; }
   ix ??= new Index(); ix.files ??= new List<Entry>(); ix.spaces ??= new Dictionary<string, string>();
@@ -31,13 +34,25 @@ sealed class FilePool {
    string n = Path.GetFileName(f);
    if (n.EndsWith(".part") || (n.EndsWith(".bin") && !known.Contains(n.Substring(0, n.Length - 4)))) try { File.Delete(f); } catch { }
   }
-  Evict(0); Save();
+  Evict(0); Expire(); Save();
+  expireTimer = new Timer(_ => { try { Expire(); } catch (Exception e) { Log.Write("小云过期清理失败：" + e.Message); } }, null, 600000, 600000);
+ }
+
+ /// <summary>删掉放进来超过 MaxAgeMs 的文件。</summary>
+ public void Expire() {
+  if (MaxAgeMs <= 0) return;
+  int n = 0; long cut = Util.Ms() - MaxAgeMs;
+  lock (gate) {
+   foreach (var old in ix.files.Where(e => e.at < cut).ToList()) { ix.files.Remove(old); try { File.Delete(Bin(old.id)); } catch { } n++; }
+   if (n > 0) Save();
+  }
+  if (n > 0) Log.Write("小云删掉超过 " + (MaxAgeMs / 86400000.0) + " 天的 " + n + " 个文件");
  }
  string IndexPath => Path.Combine(dir, "index.json");
  string Bin(string id) => Path.Combine(dir, id + ".bin");
  public long Used { get { lock (gate) return ix.files.Sum(e => e.size); } }
  public int Count { get { lock (gate) return ix.files.Count; } }
- public object Info => new { capMB = Cap >> 20, usedMB = Math.Round(Used / 1048576.0, 1), files = Count, maxFileMB = MaxFile >> 20 };
+ public object Info => new { capMB = Cap >> 20, usedMB = Math.Round(Used / 1048576.0, 1), files = Count, maxFileMB = MaxFile >> 20, keepDays = MaxAgeMs / 86400000.0 };
 
  void Save() {
   lock (gate) {
@@ -87,9 +102,10 @@ sealed class FilePool {
  }
 
  void List(Res res, string space) {
+  Expire();
   List<object> files;
   lock (gate) files = ix.files.Where(e => e.space == space).OrderByDescending(e => e.at).Select(e => (object)new { e.id, e.size, e.at, e.meta }).ToList();
-  res.Json(new { files, capMB = Cap >> 20, usedMB = Math.Round(Used / 1048576.0, 1), maxFileMB = MaxFile >> 20 });
+  res.Json(new { files, capMB = Cap >> 20, usedMB = Math.Round(Used / 1048576.0, 1), maxFileMB = MaxFile >> 20, keepDays = MaxAgeMs / 86400000.0 });
  }
 
  void Upload(Req q, Res res, string space) {
@@ -127,7 +143,7 @@ sealed class FilePool {
 
  void Download(Res res, string id) {
   Entry e; lock (gate) e = ix.files.FirstOrDefault(x => x.id == id);
-  if (e == null) { res.Json(new { error = "文件已经不在了（小云满了会先删最早的）" }, 404); return; }
+  if (e == null) { res.Json(new { error = "文件已经不在了（放进来 3 天后会自动删除）" }, 404); return; }
   FileStream f;
   try { f = new FileStream(Bin(id), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16); }
   catch { res.Json(new { error = "文件已经不在了" }, 404); return; }
@@ -149,7 +165,7 @@ sealed class FilePool {
 /// <summary>服务器上只当中转（不开窗口、不碰剪贴板）：LanBridge.exe --relay-server [--port 49330] [--pool 目录] [--pool-mb 1024]</summary>
 static class RelayHost {
  public static int Run(string[] a) {
-  int port = 49330; string bind = "0.0.0.0", pool = null, logDir = null; long poolMB = 1024, maxMB = 300;
+  int port = 49330; string bind = "0.0.0.0", pool = null, logDir = null; long poolMB = 1024, maxMB = 300; double days = 3;
   for (int i = 0; i < a.Length; i++) {
    switch (a[i]) {
     case "--port" when i + 1 < a.Length: port = int.Parse(a[++i]); break;
@@ -158,6 +174,7 @@ static class RelayHost {
     case "--pool-mb" when i + 1 < a.Length: poolMB = long.Parse(a[++i]); break;
     case "--relay-max-mb" when i + 1 < a.Length: maxMB = long.Parse(a[++i]); break;
     case "--log" when i + 1 < a.Length: logDir = a[++i]; break;
+    case "--pool-days" when i + 1 < a.Length: days = double.Parse(a[++i], System.Globalization.CultureInfo.InvariantCulture); break;
    }
   }
   string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "LanBridgeRelay");
@@ -167,9 +184,9 @@ static class RelayHost {
   bool owned; try { owned = mutex.WaitOne(0); } catch (AbandonedMutexException) { owned = true; }
   if (!owned) { Console.WriteLine("已经在运行"); return 0; }
   ThreadPool.SetMinThreads(32, 16);
-  var fp = poolMB > 0 ? new FilePool(pool, poolMB << 20, maxMB << 20) : null;
+  var fp = poolMB > 0 ? new FilePool(pool, poolMB << 20, maxMB << 20, days) : null;
   using var server = new RelayServer(port, maxMB << 20, IPAddress.Parse(bind), fp);
-  Log.Write("轻桥中转 " + Program.Version + " 在 " + bind + ":" + port + "，单次上限 " + maxMB + " MB" + (fp != null ? "，小云 " + poolMB + " MB（" + pool + "）" : ""));
+  Log.Write("轻桥中转 " + Program.Version + " 在 " + bind + ":" + port + "，单次上限 " + maxMB + " MB" + (fp != null ? "，小云 " + poolMB + " MB、留 " + days + " 天（" + pool + "）" : ""));
   Console.WriteLine("轻桥中转在 http://" + bind + ":" + port);
   Thread.Sleep(Timeout.Infinite);
   return 0;

@@ -8,12 +8,12 @@ using System.Windows.Forms;
 namespace LanBridge;
 
 static class Program {
- public const string Version = "2.2.24";
+ public const string Version = "2.2.25";
 
  [STAThread]
  static int Main(string[] args) {
   Embedded.Hook();
-  if (args.Length == 2 && args[0] == "--make-icon") { Brand.WriteIco(args[1]); return 0; }
+  if (args.Length == 2 && args[0] == "--make-icon") { Console.WriteLine("图标改用 python tools/make_icon.py 生成"); return 1; }
   // 服务器上只当常驻中转 + 小云文件池。
   if (Array.IndexOf(args, "--relay-server") >= 0) return RelayHost.Run(args);
   var o = Options.Parse(args);

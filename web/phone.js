@@ -35,7 +35,8 @@ async function boot() {
   if (h.get('t')) saveToken(h.get('t')); // 从局域网网页换到中转地址时带过来的授权
   if (h.get('moved')) localStorage.setItem(K + 'moved', '1');
   if (secret || h.get('t')) history.replaceState(null, '', BASE);
-  if (h.has('guide') || localStorage.getItem(K + 'wz')) view = 'wizard';
+  // 每次打开都先到“传送”页；向导没走完也不自动跳进去（设置页里点“带我设置”会接着上次那一步）
+  if (h.has('guide')) view = 'wizard';
   if (secret && token) { try { await call('/api/phone/state'); } catch (e) { if (e.status === 401) token = ''; } }
   if (secret && !token) {
     $('app').innerHTML = `<div class="card pair"><span class="spin"></span><p style="margin-top:14px">正在连接电脑…</p></div>`;
@@ -226,7 +227,7 @@ function cloudCard() {
   return `<div class="card"><div class="ct">${icon('cloud')}小云<span class="muted" style="margin-left:auto;font-weight:400;font-size:12px">${cloudList.usedMB} / ${cloudList.capMB} MB</span></div>
     <textarea class="input ctin" id="cloudText" placeholder="输入或粘贴文字，存到小云：组里的电脑和这部手机随时能复制" rows="3"></textarea>
     <div class="actions"><button class="btn primary big" id="cloudSave">${icon('cloud')}存到小云</button></div>
-    ${cloudList.files.length ? '' : '<div class="empty">存进来的文字、照片、文件，组里的电脑和这部手机在哪都能拿到，文件也可以把链接发给别人。放满 1 GB 会先删最早的。</div>'}
+    ${cloudList.files.length ? '' : '<div class="empty">存进来的文字、照片、文件，组里的电脑和这部手机在哪都能拿到，文件也可以把链接发给别人。放进来 3 天后自动删除。</div>'}
     ${cloudList.files.slice(0, 30).map(row).join('')}
     <div class="actions"><button class="btn soft big" id="cloudPick">${icon('upload')}放照片 / 文件到小云</button></div>
     <div id="cups">${upsHtml(true)}</div>

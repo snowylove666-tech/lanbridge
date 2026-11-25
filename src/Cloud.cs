@@ -118,47 +118,47 @@ sealed class Cloud {
    new Keys(raw).OpenStream(s, resp.ContentLength, m, null);
    var b = m.ToArray(); int at = 4 + BitConverter.ToInt32(b, 0);
    return Encoding.UTF8.GetString(b, at, b.Length - at).TrimStart('\uFEFF').Replace("\r\n", "\n");
-  } catch (WebException we) when (we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound) { throw new ApiError(404, "这条已经不在小云上了（满了会先删最早的）"); }
+  } catch (WebException we) when (we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound) { throw new ApiError(404, "这条已经不在小云上了（放进来 3 天后会自动删除）"); }
  }
- string lastError;
-
- // ───── 手机在电脑关着时直接存进小云的东西（2.2.24） ─────
- /// <summary>小云条目标签的钥匙：从设备组密钥派生，只给小云用。手机拿它就能在电脑关机时自己读写小云，但拿不到电脑之间同步用的密钥。</summary>
- byte[] MetaKey => Crypto.Hmac(FamilyKey, "lanbridge/2/pool-meta");
- Keys MetaKeys => new Keys(MetaKey);
- byte[] OpenMeta(byte[] sealedMeta) { try { return MetaKeys.Open(sealedMeta); } catch { return Group.Open(sealedMeta); } }
-
- /// <summary>交给手机的小云通行证（电脑在线时随状态一起给，手机存起来，电脑关机时用）。</summary>
- public object PhonePass() => Ready && app.Relay.Base != null ? new { space = Space, auth = Secret, mk = B64Url(MetaKey) } : null;
-
- long inboxAt;
- /// <summary>电脑回来后看一眼：手机在电脑关着时发的文字、放的文件，放进“动态”和手机历史，提醒一下。</summary>
- public void CheckInbox(bool force = false) {
-  if (!Ready || (!force && Util.Ms() - inboxAt < 90000)) return;
-  inboxAt = Util.Ms();
-  List(); List<Item> fresh;
-  lock (keys) lock (app.Gate) fresh = cache.Where(x => x.inbox && !C.cloudSeen.Contains(x.id)).OrderBy(x => x.at).ToList();
-  if (fresh.Count == 0) return;
-  int texts = 0, files = 0; string from = null;
-  foreach (var x in fresh) {
-   from = x.from;
-   try {
-    if (x.kind == "text") {
-     string text = x.full ? x.text : ReadText(x.id);
-     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "text", dir = "in", from = x.from, to = new List<string> { C.deviceName }, text = text, status = "done", note = "电脑关着时发的，存在小云里，点“再复制一次”放进剪贴板", total = text.Length, time = x.at });
-     Phone p; lock (app.Gate) p = C.phones.FirstOrDefault(ph => ph.name == x.from);
-     if (p != null) app.History.Add(p, "text", text, null);
-     texts++;
-    } else {
-     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "info", dir = "in", from = x.from, status = "done", note = x.from + " 在电脑关着时放进小云：" + x.name + "（在小云里下载）", time = x.at });
-     files++;
-    }
-    lock (app.Gate) { C.cloudSeen.Add(x.id); if (C.cloudSeen.Count > 500) C.cloudSeen.RemoveRange(0, C.cloudSeen.Count - 500); }
-   } catch (Exception e) { Log.Write("取手机离线内容失败：" + e.Message); }
-  }
-  app.Save(); app.Changes.Bump();
-  Log.Write("电脑回来了：收到手机离线时发的 " + texts + " 段文字、" + files + " 个文件");
-  if (C.notify) app.Notify((from ?? "手机") + " 在电脑关着时发来了内容", (texts > 0 ? texts + " 段文字" : "") + (texts > 0 && files > 0 ? "、" : "") + (files > 0 ? files + " 个文件（在小云里）" : "") + "\n在“动态”里看", app.ShowWindow);
+ string lastError;
+
+ // ───── 手机在电脑关着时直接存进小云的东西（2.2.24） ─────
+ /// <summary>小云条目标签的钥匙：从设备组密钥派生，只给小云用。手机拿它就能在电脑关机时自己读写小云，但拿不到电脑之间同步用的密钥。</summary>
+ byte[] MetaKey => Crypto.Hmac(FamilyKey, "lanbridge/2/pool-meta");
+ Keys MetaKeys => new Keys(MetaKey);
+ byte[] OpenMeta(byte[] sealedMeta) { try { return MetaKeys.Open(sealedMeta); } catch { return Group.Open(sealedMeta); } }
+
+ /// <summary>交给手机的小云通行证（电脑在线时随状态一起给，手机存起来，电脑关机时用）。</summary>
+ public object PhonePass() => Ready && app.Relay.Base != null ? new { space = Space, auth = Secret, mk = B64Url(MetaKey) } : null;
+
+ long inboxAt;
+ /// <summary>电脑回来后看一眼：手机在电脑关着时发的文字、放的文件，放进“动态”和手机历史，提醒一下。</summary>
+ public void CheckInbox(bool force = false) {
+  if (!Ready || (!force && Util.Ms() - inboxAt < 90000)) return;
+  inboxAt = Util.Ms();
+  List(); List<Item> fresh;
+  lock (keys) lock (app.Gate) fresh = cache.Where(x => x.inbox && !C.cloudSeen.Contains(x.id)).OrderBy(x => x.at).ToList();
+  if (fresh.Count == 0) return;
+  int texts = 0, files = 0; string from = null;
+  foreach (var x in fresh) {
+   from = x.from;
+   try {
+    if (x.kind == "text") {
+     string text = x.full ? x.text : ReadText(x.id);
+     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "text", dir = "in", from = x.from, to = new List<string> { C.deviceName }, text = text, status = "done", note = "电脑关着时发的，存在小云里，点“再复制一次”放进剪贴板", total = text.Length, time = x.at });
+     Phone p; lock (app.Gate) p = C.phones.FirstOrDefault(ph => ph.name == x.from);
+     if (p != null) app.History.Add(p, "text", text, null);
+     texts++;
+    } else {
+     app.Feed.Add(new FeedItem { id = Crypto.Token(8), kind = "info", dir = "in", from = x.from, status = "done", note = x.from + " 在电脑关着时放进小云：" + x.name + "（在小云里下载）", time = x.at });
+     files++;
+    }
+    lock (app.Gate) { C.cloudSeen.Add(x.id); if (C.cloudSeen.Count > 500) C.cloudSeen.RemoveRange(0, C.cloudSeen.Count - 500); }
+   } catch (Exception e) { Log.Write("取手机离线内容失败：" + e.Message); }
+  }
+  app.Save(); app.Changes.Bump();
+  Log.Write("电脑回来了：收到手机离线时发的 " + texts + " 段文字、" + files + " 个文件");
+  if (C.notify) app.Notify((from ?? "手机") + " 在电脑关着时发来了内容", (texts > 0 ? texts + " 段文字" : "") + (texts > 0 && files > 0 ? "、" : "") + (files > 0 ? files + " 个文件（在小云里）" : "") + "\n在“动态”里看", app.ShowWindow);
  }
 
  /// <summary>上传前先看放不放得下，免得手机传完一大段才知道。</summary>
@@ -236,7 +236,7 @@ sealed class Cloud {
     app.Feed.Update(item.id, x => { x.status = "done"; x.done = x.total = size; x.files = new List<FeedFile> { new FeedFile { name = Path.GetFileName(final), path = final, size = size } }; x.note = null; });
     if (C.notify) app.Notify("已从小云下载", Path.GetFileName(final), () => Shell.Reveal(final));
    } catch (Exception e) {
-    string why = e is ApiError ? e.Message : e is WebException we && we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound ? "这个文件已经不在小云上了（满了会先删最早的）" : "下载没成功：" + e.Message;
+    string why = e is ApiError ? e.Message : e is WebException we && we.Response is HttpWebResponse er && er.StatusCode == HttpStatusCode.NotFound ? "这个文件已经不在小云上了（放进来 3 天后会自动删除）" : "下载没成功：" + e.Message;
     app.Feed.Update(item.id, x => { x.status = "failed"; x.note = why; });
     Log.Write("小云下载失败：" + e.Message);
    } finally { if (part != null) try { File.Delete(part); } catch { } }

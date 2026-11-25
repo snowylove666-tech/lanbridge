@@ -626,7 +626,7 @@ function renderCloud() {
     </li>`).join('');
   set($('cloudBody'), `
     <div class="cusage"><div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>
-      <small>已用 ${d.usedMB} MB / ${fmtCap(d.capMB)}，单个最大 ${d.maxFileMB} MB。满了会先删最早放上来的。</small></div>
+      <small>已用 ${d.usedMB} MB / ${fmtCap(d.capMB)}，单个最大 ${d.maxFileMB} MB。放进来 3 天后自动删除，要长期保存请下载。</small></div>
     ${d.error ? `<div class="bad" style="margin:0 2px 12px">${esc(d.error)}</div>` : ''}
     <div class="ctbox"><textarea class="input" id="cloudText" rows="2" placeholder="输入或粘贴文字，存到小云：手机和组里的电脑随时能复制"></textarea><button class="btn primary" data-cloud-text>${icon('cloud')}存到小云</button></div>
     <div class="cdrop">${icon('upload')}<span>把文件拖到这个窗口，或者点右上角“放文件”。组里的电脑都能看到；“复制链接”发给手机或别人，浏览器打开就能下载。</span></div>
